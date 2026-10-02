@@ -4,13 +4,16 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { WebSocketHub } from './websocket/wsHub.js';
 import { handleTraceEndpointPipeline } from './mcp/tools/tracePipeline.js';
 import { handleUpdateInvestigationSession } from './mcp/tools/updateSession.js';
 import { handleExecuteSandboxedRunner } from './mcp/tools/executeRunner.js';
 import { handleCodebaseSearch } from './mcp/tools/codebaseSearch.js';
 import { handleFindSymbolReferences } from './mcp/tools/findSymbolReferences.js';
+import { handleParseCurlRequest } from './mcp/tools/parseCurl.js';
+import { availableResources, handleReadResource } from './mcp/resources/index.js';
+import { availablePrompts, handleGetPrompt } from './mcp/prompts/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = parseInt(process.env.FLOWLENS_PORT || '9876', 10);
@@ -103,7 +106,9 @@ const mcpServer = new Server({
     version: '1.0.0'
 }, {
     capabilities: {
-        tools: {}
+        tools: {},
+        resources: {},
+        prompts: {}
     }
 });
 // Register list of available tools
@@ -219,6 +224,20 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
                     },
                     required: ['symbolName']
                 }
+            },
+            {
+                name: 'parse_curl_request',
+                description: 'Phân tích cú pháp lệnh cURL thông minh: tự động bóc tách Method, Endpoint, Query Params, Headers, Body và giải mã claims/roles/expiration từ JWT Token không cần thư viện ngoài.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        curlCommand: {
+                            type: 'string',
+                            description: 'Lệnh cURL nguyên bản (hỗ trợ nhiều dòng gạch chéo ngược \\, headers, body JSON, bearer token)'
+                        }
+                    },
+                    required: ['curlCommand']
+                }
             }
         ]
     };
@@ -238,6 +257,8 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
                 return await handleCodebaseSearch(args);
             case 'find_symbol_references':
                 return await handleFindSymbolReferences(args);
+            case 'parse_curl_request':
+                return await handleParseCurlRequest(args);
             default:
                 throw new Error(`Unknown FlowLens MCP tool: ${name}`);
         }
@@ -253,6 +274,31 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
             ]
         };
     }
+});
+// ==========================================
+// 3. MCP Resources & Prompts Handlers
+// ==========================================
+// Register list of available resources
+mcpServer.setRequestHandler(ListResourcesRequestSchema, async () => {
+    return {
+        resources: availableResources
+    };
+});
+// Handle reading resource contents
+mcpServer.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    return await handleReadResource(uri, PORT);
+});
+// Register list of available prompts
+mcpServer.setRequestHandler(ListPromptsRequestSchema, async () => {
+    return {
+        prompts: availablePrompts
+    };
+});
+// Handle getting prompt
+mcpServer.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    return await handleGetPrompt(name, args || {}, PORT);
 });
 // Start Stdio transport
 async function run() {

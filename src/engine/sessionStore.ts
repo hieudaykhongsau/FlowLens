@@ -78,12 +78,14 @@ export class SessionStore {
     rootCauseNodeId?: string;
     summary?: string;
     status?: 'running' | 'completed' | 'failed';
+    parsedRequest?: any;
   }): InvestigationSession {
     if (params.endpoint) this.currentSession.endpoint = params.endpoint;
     if (params.method) this.currentSession.method = params.method.toUpperCase();
     if (params.summary) this.currentSession.summary = params.summary;
     if (params.status) this.currentSession.status = params.status;
     if (params.rootCauseNodeId) this.currentSession.rootCauseNodeId = params.rootCauseNodeId;
+    if (params.parsedRequest !== undefined) this.currentSession.parsedRequest = params.parsedRequest;
 
     if (params.currentStep !== undefined && params.currentStep >= 1 && params.currentStep <= 6) {
       const idx = params.currentStep - 1;

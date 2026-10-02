@@ -66,6 +66,8 @@ export class SessionStore {
             this.currentSession.status = params.status;
         if (params.rootCauseNodeId)
             this.currentSession.rootCauseNodeId = params.rootCauseNodeId;
+        if (params.parsedRequest !== undefined)
+            this.currentSession.parsedRequest = params.parsedRequest;
         if (params.currentStep !== undefined && params.currentStep >= 1 && params.currentStep <= 6) {
             const idx = params.currentStep - 1;
             if (this.currentSession.steps[idx]) {

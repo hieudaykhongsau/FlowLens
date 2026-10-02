@@ -23,8 +23,11 @@
 - [6. Quy trình điều tra chuẩn (Investigation Protocol)](#6-quy-trình-điều-tra-chuẩn-investigation-protocol)
 - [7. Công nghệ sử dụng (Tech Stack)](#7-công-nghệ-sử-dụng-tech-stack)
 - [8. Hướng dẫn cài đặt & Cấu hình nhanh](#8-hướng-dẫn-cài-đặt--cấu-hình-nhanh)
-- [9. Hệ thống tài liệu chi tiết](#9-hệ-thống-tài-liệu-chi-tiết)
-- [10. Lộ trình phát triển (Roadmap)](#10-lộ-trình-phát-triển-roadmap)
+- [9. Hướng dẫn sử dụng & Mẫu Prompt chuẩn (Prompt Recipes)](#9-hướng-dẫn-sử-dụng--mẫu-prompt-chuẩn-prompt-recipes)
+- [10. Danh mục công cụ FlowLens MCP (Tools Reference)](#10-danh-mục-công-cụ-flowlens-mcp-tools-reference)
+- [11. Danh mục MCP Resources & Prompts](#11-danh-mục-mcp-resources--prompts-chuẩn-model-context-protocol)
+- [12. Hệ thống tài liệu chi tiết](#12-hệ-thống-tài-liệu-chi-tiết)
+- [13. Lộ trình phát triển (Roadmap)](#13-lộ-trình-phát-triển-roadmap)
 
 ---
 
@@ -267,7 +270,8 @@ Hãy dùng tool execute_sandboxed_runner của FlowLens để chạy test suite 
 
 | Tên Tool | Vai trò | Đầu vào chính |
 |---|---|---|
-| `trace_endpoint_pipeline` | **Composite Macro Tool:** Quét tĩnh toàn bộ chuỗi mắt xích (Route $\rightarrow$ Filter $\rightarrow$ Injected Service $\rightarrow$ Repo $\rightarrow$ DB) trong **1 round-trip**, tiết kiệm hơn 70% token. | `endpoint`, `method`, `workspacePath`, `errorCode` |
+| `trace_endpoint_pipeline` | **Composite Macro Tool:** Quét tĩnh toàn bộ chuỗi mắt xích (Route $\rightarrow$ Filter $\rightarrow$ Injected Service $\rightarrow$ Repo $\rightarrow$ DB) trong **1 round-trip**, tự động bóc tách cURL & giải mã JWT để trích xuất Role, tiết kiệm hơn 70% token. | `endpoint`, `method`, `workspacePath`, `curlCommand`, `errorCode` |
+| `parse_curl_request` | **Smart cURL & JWT Parser:** Phân tích cú pháp cURL, trích xuất Method, Endpoint, Query, Body và tự động giải mã Claims, Roles, Expiry từ JWT Token (không cần thư viện ngoài). | `curlCommand` |
 | `update_investigation_session` | Cập nhật phiên điều tra, đánh dấu trạng thái node (`PASSED`, `STOPPED_HERE`, `SKIPPED`), đính kèm **Causal WHY Card** và **Code Evidence** để đồng bộ tức thì lên 2D Canvas. | `sessionId`, `currentStep`, `nodes`, `edges`, `rootCauseNodeId` |
 | `execute_sandboxed_runner` | Chạy an toàn test runner (`mvn`, `gradle`, `npm`, `pytest`, `go`) hoặc đọc passive log để bắt stack trace thực tế. | `command`, `args`, `cwd`, `mode` (`active`, `ephemeral_mock`, `passive_log`) |
 | `codebase_search` | Tìm kiếm symbol, annotation, route trong codebase bằng thuật toán tất định siêu tốc. | `query`, `workspacePath`, `fileExtensions` |
@@ -275,7 +279,32 @@ Hãy dùng tool execute_sandboxed_runner của FlowLens để chạy test suite 
 
 ---
 
-## 11. Hệ thống tài liệu chi tiết
+## 11. Danh mục MCP Resources & Prompts (Chuẩn Model Context Protocol)
+
+FlowLens hỗ trợ đầy đủ bộ 3 tiêu chuẩn của giao thức MCP: **Tools**, **Resources** và **Prompts**, giúp mọi AI Client (Antigravity, Cursor, Claude Desktop, Claude Code) có thể tương tác tự động và chính xác.
+
+### 11.1. MCP Resources (`flowlens://`)
+Cho phép AI Client hoặc IDE đọc trạng thái trực tiếp của hệ thống mà không cần tốn lượt round-trip gọi tool:
+
+| URI Resource | Định dạng | Nội dung cung cấp |
+|---|---|---|
+| `flowlens://session/current` | `application/json` | Toàn bộ snapshot phiên điều tra hiện tại (nodes, edges, certaintyScore, steps, rootCauseNodeId). |
+| `flowlens://canvas-url` | `text/plain` | Địa chỉ URL trực tiếp của Canvas trên máy cục bộ (`http://localhost:9876`). |
+| `flowlens://evidence/root-cause` | `application/json` | Bằng chứng mã nguồn (`codeEvidence`), vị trí file:line và thẻ `causalWhy` của node bị đánh dấu `STOPPED_HERE`. |
+| `flowlens://pipeline/summary` | `text/markdown` | Báo cáo Markdown tổng kết luồng thực thi, tỷ lệ node PASSED/STOPPED/SKIPPED và điểm tin cậy tất định. |
+
+### 11.2. MCP Prompts (Slash-Commands tích hợp sẵn)
+Cho phép kích hoạt quy trình làm việc chuẩn mực của FlowLens chỉ với 1 cú click hoặc gõ lệnh prompt:
+
+| Tên Prompt | Tham số | Mục đích sử dụng |
+|---|---|---|
+| `investigate_api_error` | `endpoint` *(bắt buộc)*, `curlCommand`, `errorCode`, `errorMessage`, `method` | Nạp quy trình 6 bước chuẩn mực FlowLens để AI Agent tự động gọi `trace_endpoint_pipeline`, quét AST, xác minh runtime và cập nhật Canvas. |
+| `verify_runtime_mock` | `command` *(bắt buộc: mvn/gradle/npm/pytest/go)*, `testTarget`, `mode` | Hướng dẫn AI Agent thực thi test runner an toàn trong sandbox hoặc trích xuất passive log. |
+| `explain_causal_why` | `nodeId` *(tùy chọn)* | Đọc `flowlens://evidence/root-cause` và phân tích chuyên sâu thẻ Causal WHY 4 thành phần cho lập trình viên. |
+
+---
+
+## 12. Hệ thống tài liệu chi tiết
 
 Để tìm hiểu sâu hơn về kiến trúc và đặc tả nghiệp vụ, vui lòng tham khảo các tài liệu chuyên đề trong thư mục `docs/`:
 
@@ -285,7 +314,7 @@ Hãy dùng tool execute_sandboxed_runner của FlowLens để chạy test suite 
 
 ---
 
-## 12. Lộ trình phát triển (Roadmap)
+## 13. Lộ trình phát triển (Roadmap)
 
 - [x] Thiết kế kiến trúc tổng thể, mô hình nghiệp vụ & đặc tả công nghệ.
 - [x] **Giai đoạn 1 (PoC MCP Core):** Hoàn thiện MCP Server với các tool cốt lõi (`trace_endpoint_pipeline`, `update_investigation_session`, `execute_sandboxed_runner`, `codebase_search`, `find_symbol_references`).

@@ -400,14 +400,20 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                   {runtimeLogs.map((log, i) => {
                     const isError = log.includes('ERROR') || log.includes('Exception') || log.includes('AccessDenied');
                     const isWarn = log.includes('WARN');
+                    const isJwt = log.startsWith('[JWT Decoder]');
+                    const isCurl = log.startsWith('[cURL Parser]');
                     return (
                       <div
                         key={i}
-                        className={`p-1 rounded ${
+                        className={`p-1.5 rounded transition-colors ${
                           isError
-                            ? 'text-rose-300 bg-rose-950/20'
+                            ? 'text-rose-300 bg-rose-950/30 border border-rose-900/40'
                             : isWarn
-                            ? 'text-amber-300 bg-amber-950/20'
+                            ? 'text-amber-300 bg-amber-950/30 border border-amber-900/40'
+                            : isJwt
+                            ? 'text-sky-300 bg-sky-950/30 border border-sky-900/40 font-semibold'
+                            : isCurl
+                            ? 'text-indigo-300 bg-indigo-950/30 border border-indigo-900/40'
                             : 'text-slate-300'
                         }`}
                       >

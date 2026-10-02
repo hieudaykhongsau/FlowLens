@@ -21,6 +21,7 @@ export declare class SessionStore {
         rootCauseNodeId?: string;
         summary?: string;
         status?: 'running' | 'completed' | 'failed';
+        parsedRequest?: any;
     }): InvestigationSession;
     setNodesAndEdges(nodes: FlowNode[], edges: FlowEdge[]): void;
     updateNodeState(nodeId: string, state: FlowNode['state'], extra?: Partial<FlowNode>): void;

@@ -74,6 +74,7 @@ export interface InvestigationSession {
   rootCauseNodeId?: string;
   summary?: string;
   certaintyScore: number;
+  parsedRequest?: any;
 }
 
 export interface TracePipelineParams {
@@ -96,6 +97,7 @@ export interface UpdateSessionParams {
   edges?: FlowEdge[];
   rootCauseNodeId?: string;
   summary?: string;
+  parsedRequest?: any;
 }
 
 export interface ExecuteRunnerParams {
