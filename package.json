@@ -1,0 +1,30 @@
+{
+  "name": "flowlens",
+  "version": "1.0.0",
+  "description": "Universal API Execution Debugger & Real-time Causal Canvas",
+  "type": "module",
+  "main": "./dist/server.js",
+  "bin": {
+    "flowlens": "./dist/server.js"
+  },
+  "scripts": {
+    "build:server": "tsc",
+    "build:canvas": "npm run build --prefix canvas",
+    "build": "npm run build:server && npm run build:canvas",
+    "dev:server": "tsx src/server.ts",
+    "dev:canvas": "npm run dev --prefix canvas",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "web-tree-sitter": "^0.27.0",
+    "ws": "^8.22.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.18.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

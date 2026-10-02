@@ -216,9 +216,9 @@ http://localhost:9876
 ## 10. Lộ trình phát triển (Roadmap)
 
 - [x] Thiết kế kiến trúc tổng thể, mô hình nghiệp vụ & đặc tả công nghệ.
-- [ ] **Giai đoạn 1 (PoC MCP Core):** Hoàn thiện MCP Server với các tool cơ bản (`trace_endpoint_pipeline`, `update_investigation_session`).
-- [ ] **Giai đoạn 2 (Real-time Canvas):** Xây dựng giao diện React 19 + React Flow kết nối WebSocket, hỗ trợ tương tác node và drawer hiển thị Code Evidence.
-- [ ] **Giai đoạn 3 (Adaptive Runtime):** Triển khai Safe Command Dispatcher với 3 chế độ (Active Runner, Ephemeral Mock Test Generator, Trace Log Matcher).
+- [x] **Giai đoạn 1 (PoC MCP Core):** Hoàn thiện MCP Server với các tool cốt lõi (`trace_endpoint_pipeline`, `update_investigation_session`, `execute_sandboxed_runner`, `codebase_search`, `find_symbol_references`).
+- [x] **Giai đoạn 2 (Real-time Canvas):** Xây dựng giao diện React 19 + React Flow kết nối WebSocket port 9876, tự động bố trí layout bằng Dagre, hiển thị Code Evidence & Causal WHY Card.
+- [x] **Giai đoạn 3 (Adaptive Runtime):** Triển khai Safe Command Dispatcher (Whitelisted execFile) với 3 chế độ (Active Runner, Ephemeral Mock Test, Passive Log Matcher).
 - [ ] **Giai đoạn 4 (Ecosystem Plugin):** Đóng gói extension 1-click cho Antigravity IDE, Cursor và VS Code Marketplace.
 
 ---
