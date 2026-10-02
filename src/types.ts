@@ -26,6 +26,17 @@ export interface CodeEvidence {
   language?: string;
 }
 
+export interface NodeEvidence {
+  hasRouteAnnotation?: boolean;    // +0.4 (40%)
+  routeAnnotationRule?: string;
+  hasSymbolCall?: boolean;         // +0.3 (30%)
+  symbolCallRule?: string;
+  hasRuntimeTrace?: boolean;       // +0.3 (30%)
+  runtimeTraceRule?: string;
+  hasAmbiguousOverload?: boolean;  // -0.2 (-20%)
+  ambiguityRule?: string;
+}
+
 export interface FlowNode {
   id: string;
   type: NodeType;
@@ -36,6 +47,7 @@ export interface FlowNode {
   state: ExecutionState;
   certainty: CertaintyLevel;
   confidence: number; // 0.0 to 1.0
+  evidence?: NodeEvidence;
   method?: string;
   causalWhy?: CausalWhy;
   codeEvidence?: CodeEvidence;

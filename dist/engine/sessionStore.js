@@ -119,7 +119,15 @@ export class SessionStore {
                 line: 42,
                 state: 'PASSED',
                 certainty: 'EXPLICIT',
-                confidence: 0.95,
+                confidence: 1.0,
+                evidence: {
+                    hasRouteAnnotation: true,
+                    routeAnnotationRule: '@PostMapping("/approve") khớp endpoint HTTP',
+                    hasSymbolCall: true,
+                    symbolCallRule: 'Khớp hàm approveRegulation(ApproveDto) trong Controller',
+                    hasRuntimeTrace: true,
+                    runtimeTraceRule: 'HTTP 200 frame đón nhận request thành công'
+                },
                 method: 'POST',
                 runtimeLogs: ['[2026-10-02 09:15:01.102] HTTP POST received from 10.20.1.5', 'Request Header: Authorization=Bearer eyJhbGci...']
             },
@@ -132,7 +140,14 @@ export class SessionStore {
                 line: 88,
                 state: 'PASSED',
                 certainty: 'EXPLICIT',
-                confidence: 0.90,
+                confidence: 1.0,
+                evidence: {
+                    hasRouteAnnotation: false,
+                    hasSymbolCall: true,
+                    symbolCallRule: 'doFilterInternal(request, response, chain) gọi qua Bean filter',
+                    hasRuntimeTrace: true,
+                    runtimeTraceRule: 'Log SecurityContextHolder populated: user_8392'
+                },
                 runtimeLogs: ['Token decoded successfully. Subject: user_8392, Roles: [ROLE_OPERATOR]']
             },
             {
@@ -145,6 +160,14 @@ export class SessionStore {
                 state: 'STOPPED_HERE',
                 certainty: 'EXPLICIT',
                 confidence: 1.0,
+                evidence: {
+                    hasRouteAnnotation: true,
+                    routeAnnotationRule: '@PreAuthorize("hasRole(\'ADMIN\')") gắn trực tiếp tại method',
+                    hasSymbolCall: true,
+                    symbolCallRule: 'MethodSecurityInterceptor bắt quyền trước khi invoke method',
+                    hasRuntimeTrace: true,
+                    runtimeTraceRule: 'Bắt được AccessDeniedException tại RegulationTypeController.java:41'
+                },
                 causalWhy: {
                     condition: "Người dùng phải có role 'ROLE_ADMIN' để duyệt quy định quy chế.",
                     actualState: "Token gửi lên chỉ chứa 'ROLE_OPERATOR', thiếu đặc quyền quản trị.",

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   FileCode,
@@ -10,10 +10,12 @@ import {
   Check,
   Code2,
   CheckCircle2,
-  MinusCircle
+  MinusCircle,
+  HelpCircle,
+  Info
 } from 'lucide-react';
 import type { FlowNodeData } from '../types.js';
-import { calculateRealConfidence } from '../types.js';
+import { calculateRealConfidence, resolveNodeEvidence } from '../types.js';
 
 interface InspectorDrawerProps {
   node: FlowNodeData | null;
@@ -25,7 +27,26 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
   const [copiedPatch, setCopiedPatch] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
 
-  if (!node) return null;
+  // Auto-switch tab intelligently when node changes
+  useEffect(() => {
+    if (!node) return;
+    if (node.state === 'STOPPED_HERE') {
+      setActiveTab('root_cause');
+    } else if (node.codeEvidence && !node.causalWhy) {
+      setActiveTab('code_diff');
+    } else {
+      setActiveTab('root_cause');
+    }
+  }, [node?.id, node?.state]);
+
+  if (!node) {
+    return (
+      <div className="h-full w-full bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-slate-500 font-mono text-xs">
+        <Info className="w-8 h-8 text-slate-600 mb-2" />
+        <p>Chọn một node trên sơ đồ để xem bằng chứng chi tiết, mã nguồn và thẻ Causal WHY.</p>
+      </div>
+    );
+  }
 
   const {
     label,
@@ -33,7 +54,6 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
     file,
     line,
     state,
-    evidence,
     latencyMs,
     causalWhy,
     codeEvidence,
@@ -41,7 +61,13 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
     runtimeLogs
   } = node;
 
-  const calculated = calculateRealConfidence(evidence);
+  const isStopped = state === 'STOPPED_HERE';
+  const isPassed = state === 'PASSED';
+  const isSkipped = state === 'SKIPPED';
+
+  // Đảm bảo bằng chứng toán học tất định luôn phản ánh đúng thực tế
+  const activeEvidence = resolveNodeEvidence(node);
+  const calculated = calculateRealConfidence(activeEvidence);
   const confidenceScore = node.confidence !== undefined ? node.confidence : calculated.score;
   const certaintyLevel = node.certainty || calculated.certainty;
 
@@ -61,15 +87,15 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
   };
 
   return (
-    <aside className="fixed top-14 bottom-0 right-0 w-[460px] max-w-[95vw] bg-slate-950/98 border-l border-slate-800 shadow-2xl z-30 flex flex-col overflow-hidden font-sans">
-      {/* Header */}
-      <div className="p-3.5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/80">
+    <aside className="h-full w-full bg-slate-950 flex flex-col overflow-hidden font-sans select-none">
+      {/* 1. Header */}
+      <div className="p-3 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/90 shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
           <div className="w-7 h-7 rounded bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
             <FileCode className="w-4 h-4 text-sky-400" />
           </div>
           <div className="overflow-hidden">
-            <h3 className="text-xs font-semibold text-slate-100 font-mono truncate">
+            <h3 className="text-xs font-semibold text-slate-100 font-mono truncate" title={label}>
               {label}
             </h3>
             <p className="text-[10px] text-slate-400 font-mono truncate uppercase">
@@ -81,13 +107,14 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
         <button
           onClick={onClose}
           className="p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+          title="Đóng bảng chi tiết"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center border-b border-slate-800 bg-slate-900/40 px-2 text-xs font-mono">
+      {/* 2. Tabs */}
+      <div className="flex items-center border-b border-slate-800 bg-slate-900/40 px-2 text-xs font-mono shrink-0">
         <button
           onClick={() => setActiveTab('root_cause')}
           className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium transition-colors ${
@@ -97,7 +124,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
           }`}
         >
           <AlertOctagon className="w-3.5 h-3.5" />
-          <span>Root Cause</span>
+          <span>{isStopped ? 'Root Cause (WHY)' : 'Evidence & Rules'}</span>
         </button>
 
         <button
@@ -109,7 +136,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
           }`}
         >
           <GitCompare className="w-3.5 h-3.5" />
-          <span>Code & Patch</span>
+          <span>{codeDiff ? 'Code & Patch' : 'Source Code'}</span>
         </button>
 
         <button
@@ -125,16 +152,16 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
         </button>
       </div>
 
-      {/* Drawer Body */}
+      {/* 3. Drawer Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs font-mono">
         {/* Status bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900 p-2.5 rounded border border-slate-800 text-[11px]">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 text-[11px]">
           <div className="flex items-center gap-2">
             <span
               className={`px-2 py-0.5 rounded font-semibold ${
-                state === 'STOPPED_HERE'
+                isStopped
                   ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
-                  : state === 'PASSED'
+                  : isPassed
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                   : 'bg-slate-800 text-slate-400 border border-slate-700'
               }`}
@@ -153,10 +180,24 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
           )}
         </div>
 
-        {/* TAB 1: Root Cause Analysis */}
+        {/* Informational banner if node was SKIPPED */}
+        {isSkipped && (
+          <div className="p-3 bg-slate-900/70 border border-slate-800 rounded-lg space-y-1">
+            <div className="flex items-center gap-1.5 text-slate-300 font-semibold">
+              <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
+              <span>Tầng này bị bỏ qua (SKIPPED)</span>
+            </div>
+            <p className="text-slate-400 text-[11px] leading-relaxed font-sans">
+              Luồng thực thi đã bị chặn lại ở các bước trước đó, nên tầng nghiệp vụ này chưa hề được gọi tới trong runtime.
+            </p>
+          </div>
+        )}
+
+        {/* TAB 1: Root Cause / Evidence Analysis */}
         {activeTab === 'root_cause' && (
           <div className="space-y-3">
-            {causalWhy ? (
+            {/* 4-part Causal Card for STOPPED_HERE nodes */}
+            {causalWhy && (
               <div className="space-y-2.5">
                 <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-1">
                   <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold">
@@ -196,7 +237,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                   </div>
                 )}
               </div>
-            ) : null}
+            )}
 
             {/* REAL Deterministic Evidence Breakdown */}
             <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 space-y-2.5">
@@ -219,21 +260,21 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                 <div className="flex items-start justify-between py-1 border-b border-slate-800/80 gap-2">
                   <div>
                     <div className="flex items-center gap-1 text-slate-200">
-                      {evidence?.hasRouteAnnotation ? (
+                      {activeEvidence?.hasRouteAnnotation ? (
                         <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
                       ) : (
                         <MinusCircle className="w-3 h-3 text-slate-500 shrink-0" />
                       )}
                       <span>Route / Endpoint Annotation (w₁ = +0.40):</span>
                     </div>
-                    {evidence?.routeAnnotationRule && (
+                    {activeEvidence?.routeAnnotationRule && (
                       <span className="text-[10px] text-slate-400 block pl-4">
-                        {evidence.routeAnnotationRule}
+                        {activeEvidence.routeAnnotationRule}
                       </span>
                     )}
                   </div>
-                  <span className={`font-semibold font-mono ${evidence?.hasRouteAnnotation ? 'text-emerald-400' : 'text-slate-500'}`}>
-                    {evidence?.hasRouteAnnotation ? '+40%' : '0%'}
+                  <span className={`font-semibold font-mono ${activeEvidence?.hasRouteAnnotation ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {activeEvidence?.hasRouteAnnotation ? '+40%' : '0%'}
                   </span>
                 </div>
 
@@ -241,21 +282,21 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                 <div className="flex items-start justify-between py-1 border-b border-slate-800/80 gap-2">
                   <div>
                     <div className="flex items-center gap-1 text-slate-200">
-                      {evidence?.hasSymbolCall ? (
+                      {activeEvidence?.hasSymbolCall ? (
                         <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
                       ) : (
                         <MinusCircle className="w-3 h-3 text-slate-500 shrink-0" />
                       )}
                       <span>AST & Symbol Call Graph (w₂ = +0.30):</span>
                     </div>
-                    {evidence?.symbolCallRule && (
+                    {activeEvidence?.symbolCallRule && (
                       <span className="text-[10px] text-slate-400 block pl-4">
-                        {evidence.symbolCallRule}
+                        {activeEvidence.symbolCallRule}
                       </span>
                     )}
                   </div>
-                  <span className={`font-semibold font-mono ${evidence?.hasSymbolCall ? 'text-emerald-400' : 'text-slate-500'}`}>
-                    {evidence?.hasSymbolCall ? '+30%' : '0%'}
+                  <span className={`font-semibold font-mono ${activeEvidence?.hasSymbolCall ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {activeEvidence?.hasSymbolCall ? '+30%' : '0%'}
                   </span>
                 </div>
 
@@ -263,38 +304,39 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                 <div className="flex items-start justify-between py-1 border-b border-slate-800/80 gap-2">
                   <div>
                     <div className="flex items-center gap-1 text-slate-200">
-                      {evidence?.hasRuntimeTrace ? (
-                        <CheckCircle2 className="w-3 h-3 text-rose-400 shrink-0" />
+                      {activeEvidence?.hasRuntimeTrace ? (
+                        <CheckCircle2 className={`w-3 h-3 shrink-0 ${isStopped ? 'text-rose-400' : 'text-emerald-400'}`} />
                       ) : (
                         <MinusCircle className="w-3 h-3 text-slate-500 shrink-0" />
                       )}
                       <span>Runtime Frame / Stack Trace (w₃ = +0.30):</span>
                     </div>
-                    {evidence?.runtimeTraceRule && (
+                    {activeEvidence?.runtimeTraceRule && (
                       <span className="text-[10px] text-slate-400 block pl-4">
-                        {evidence.runtimeTraceRule}
+                        {activeEvidence.runtimeTraceRule}
                       </span>
                     )}
                   </div>
-                  <span className={`font-semibold font-mono ${evidence?.hasRuntimeTrace ? 'text-rose-400' : 'text-slate-500'}`}>
-                    {evidence?.hasRuntimeTrace ? '+30%' : '0%'}
+                  <span className={`font-semibold font-mono ${activeEvidence?.hasRuntimeTrace ? (isStopped ? 'text-rose-400' : 'text-emerald-400') : 'text-slate-500'}`}>
+                    {activeEvidence?.hasRuntimeTrace ? '+30%' : '0%'}
                   </span>
                 </div>
 
-                {/* 4. Ambiguity penalty */}
-                {evidence?.hasAmbiguousOverload && (
-                  <div className="flex items-start justify-between py-1 border-b border-slate-800/80 gap-2">
+                {/* 4. Ambiguity deduction */}
+                {activeEvidence?.hasAmbiguousOverload && (
+                  <div className="flex items-start justify-between py-1 text-rose-300 gap-2">
                     <div>
-                      <span className="text-amber-400 font-semibold block">
-                        Ambiguous Overload Penalty (w₄ = -0.20):
-                      </span>
-                      {evidence.ambiguityRule && (
-                        <span className="text-[10px] text-slate-400 block">
-                          {evidence.ambiguityRule}
+                      <div className="flex items-center gap-1 font-semibold">
+                        <AlertOctagon className="w-3 h-3 text-rose-400 shrink-0" />
+                        <span>Ambiguous Polymorphism Overload (w₄ = -0.20):</span>
+                      </div>
+                      {activeEvidence.ambiguityRule && (
+                        <span className="text-[10px] text-rose-400/80 block pl-4">
+                          {activeEvidence.ambiguityRule}
                         </span>
                       )}
                     </div>
-                    <span className="font-semibold text-amber-400 font-mono">-20%</span>
+                    <span className="font-semibold font-mono text-rose-400">-20%</span>
                   </div>
                 )}
               </div>
@@ -302,15 +344,15 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
           </div>
         )}
 
-        {/* TAB 2: Code Evidence & Git Patch Diff */}
+        {/* TAB 2: Code Diff & Suggested Patch */}
         {activeTab === 'code_diff' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {codeDiff ? (
               <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
                 <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <GitCompare className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Suggested Patch Diff</span>
+                  <span className="flex items-center gap-1.5 truncate max-w-[260px]">
+                    <GitCompare className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{codeDiff.filename || file?.split('/').pop() || 'Patch'}</span>
                   </span>
                   <button
                     onClick={handleCopyPatch}
@@ -319,7 +361,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                     {copiedPatch ? (
                       <>
                         <Check className="w-3 h-3 text-emerald-400" />
-                        <span>Copied</span>
+                        <span>Copied Patch</span>
                       </>
                     ) : (
                       <>
@@ -330,23 +372,29 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                   </button>
                 </div>
 
-                <div className="p-3 bg-slate-950 font-mono text-[11px] leading-relaxed overflow-x-auto">
-                  <div className="text-slate-500 pb-1">
-                    --- a/{codeDiff.filename || file?.split('/').pop() || 'Original'}
-                    <br />
-                    +++ b/{codeDiff.filename || file?.split('/').pop() || 'Suggested'}
+                {/* Git-style Diff View */}
+                <div className="p-3 bg-slate-950 font-mono text-[11px] overflow-x-auto leading-relaxed space-y-1">
+                  <div className="text-slate-500 pb-1 border-b border-slate-800 text-[10px]">
+                    @@ -41,1 +41,1 @@ Root Cause Fix
                   </div>
-                  <div className="text-rose-400 bg-rose-950/30 px-2 py-0.5 rounded-sm">
-                    - {codeDiff.oldCode}
+                  <div className="flex items-start gap-2 bg-rose-950/40 text-rose-300 px-1 py-0.5 rounded">
+                    <span className="select-none text-rose-500 font-bold">-</span>
+                    <pre className="overflow-x-auto">
+                      <code>{codeDiff.oldCode}</code>
+                    </pre>
                   </div>
-                  <div className="text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-sm mt-0.5">
-                    + {codeDiff.newCode}
+                  <div className="flex items-start gap-2 bg-emerald-950/40 text-emerald-300 px-1 py-0.5 rounded">
+                    <span className="select-none text-emerald-500 font-bold">+</span>
+                    <pre className="overflow-x-auto">
+                      <code>{codeDiff.newCode}</code>
+                    </pre>
                   </div>
                 </div>
               </div>
             ) : null}
 
-            {codeEvidence && (
+            {/* Code Evidence snippet */}
+            {codeEvidence ? (
               <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
                 <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-300">
                   <span className="flex items-center gap-1.5 truncate max-w-[260px]" title={codeEvidence.file}>
@@ -378,7 +426,11 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                   </pre>
                 </div>
               </div>
-            )}
+            ) : !codeDiff ? (
+              <div className="p-4 text-center text-slate-500 font-mono text-xs">
+                Chưa có đoạn mã nguồn mẫu cho node này.
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -424,8 +476,9 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                 </div>
               </div>
             ) : (
-              <div className="p-4 text-center text-slate-500 text-xs">
-                Không có log phát sinh tại node này.
+              <div className="p-6 text-center text-slate-500 font-mono text-xs bg-slate-900/40 rounded-lg border border-slate-800/60">
+                <Terminal className="w-5 h-5 mx-auto mb-2 text-slate-600" />
+                <p>Không có log runtime phát sinh tại node này.</p>
               </div>
             )}
           </div>

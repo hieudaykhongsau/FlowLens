@@ -24,6 +24,7 @@ export const App: React.FC = () => {
   const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB');
   const [selectedNode, setSelectedNode] = useState<FlowNodeData | null>(null);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
+  const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -39,6 +40,7 @@ export const App: React.FC = () => {
 
   const handleSelectNode = useCallback((nodeData: FlowNodeData) => {
     setSelectedNode(nodeData);
+    setIsInspectorOpen(true);
   }, []);
 
   // Sync session nodes and edges to React Flow
@@ -71,9 +73,11 @@ export const App: React.FC = () => {
       const stoppedNode = currentSession.nodes.find((n) => n.state === 'STOPPED_HERE');
       if (stoppedNode) {
         setSelectedNode(stoppedNode);
+      } else if (currentSession.nodes.length > 0 && !selectedNode) {
+        setSelectedNode(currentSession.nodes[0]);
       }
     },
-    [handleSelectNode, setNodes, setEdges]
+    [handleSelectNode, setNodes, setEdges, selectedNode]
   );
 
   // WebSocket Connection
@@ -167,7 +171,7 @@ export const App: React.FC = () => {
     setSession(stage1Session);
     syncGraph(stage1Session, layoutDirection);
 
-    // Bước 2 (Sau 500ms): Xác minh Runtime - Kích hoạt các node PASSED
+    // Bước 2 (Sau 450ms): Xác minh Runtime - Kích hoạt các node PASSED
     setTimeout(() => {
       const stage2Steps: InvestigationStep[] = targetSession.steps.map((s, idx) => ({
         ...s,
@@ -213,8 +217,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="w-screen h-screen flex flex-col bg-[#080c14] text-slate-100 overflow-hidden font-sans">
-      {/* 1. Header Bar */}
+    <div className="w-screen h-screen flex flex-col bg-[#070b12] text-slate-100 overflow-hidden font-sans">
+      {/* 1. Sleek Header Bar */}
       <Header
         session={session}
         isConnected={isConnected}
@@ -223,43 +227,64 @@ export const App: React.FC = () => {
         onFitView={() => syncGraph(session, layoutDirection)}
         onResetDemo={handleResetDemo}
         onOpenSimulator={() => setIsSimulatorOpen(true)}
+        isInspectorOpen={isInspectorOpen}
+        onToggleInspector={() => setIsInspectorOpen((prev) => !prev)}
       />
 
       {/* 2. Investigation Stepper Progress Tracker */}
       <StepperTracker steps={session.steps} />
 
-      {/* 3. React Flow 2D Canvas */}
-      <div className="flex-1 relative w-full h-full">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          nodeTypes={nodeTypes}
-          fitView
-          minZoom={0.2}
-          maxZoom={1.8}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background
-            color="#1e293b"
-            gap={24}
-            size={1.5}
-            variant={BackgroundVariant.Dots}
-          />
-          <Controls
-            className="!bg-slate-900 !border-slate-800 !text-slate-300 [&>button]:!bg-slate-900 [&>button]:!border-slate-800 [&>button:hover]:!bg-slate-800"
-            showInteractive={false}
-          />
-        </ReactFlow>
+      {/* 3. Main Workspace: Canvas on Left, Docked Inspector Panel on Right */}
+      <div className="flex-1 flex overflow-hidden relative w-full h-full">
+        {/* 2D Canvas Viewport */}
+        <div className="flex-1 h-full relative">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            nodeTypes={nodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.25 }}
+            minZoom={0.2}
+            maxZoom={2.0}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background
+              color="#1e293b"
+              gap={24}
+              size={1.5}
+              variant={BackgroundVariant.Dots}
+            />
+            <Controls
+              className="!bg-slate-900 !border-slate-800 !text-slate-300 [&>button]:!bg-slate-900 [&>button]:!border-slate-800 [&>button:hover]:!bg-slate-800"
+              showInteractive={false}
+            />
+          </ReactFlow>
 
-        {/* 4. Inspector Drawer */}
-        <InspectorDrawer
-          node={selectedNode}
-          onClose={() => setSelectedNode(null)}
-        />
+          {/* Floating Re-open Button when inspector is collapsed */}
+          {!isInspectorOpen && selectedNode && (
+            <button
+              onClick={() => setIsInspectorOpen(true)}
+              className="absolute bottom-5 right-5 z-20 flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-slate-200 shadow-xl backdrop-blur transition-all"
+            >
+              <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+              <span>Xem chi tiết: <strong>{selectedNode.label}</strong></span>
+            </button>
+          )}
+        </div>
 
-        {/* 5. Investigation Test Simulator Modal */}
+        {/* Docked Inspector Sidebar Panel */}
+        {isInspectorOpen && (
+          <div className="w-[430px] xl:w-[480px] h-full border-l border-slate-800 bg-slate-950 flex flex-col shrink-0 z-20 shadow-2xl transition-all duration-150">
+            <InspectorDrawer
+              node={selectedNode}
+              onClose={() => setIsInspectorOpen(false)}
+            />
+          </div>
+        )}
+
+        {/* 4. Investigation Test Simulator Modal */}
         <InvestigationModal
           isOpen={isSimulatorOpen}
           onClose={() => setIsSimulatorOpen(false)}

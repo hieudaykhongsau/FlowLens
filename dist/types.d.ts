@@ -13,6 +13,16 @@ export interface CodeEvidence {
     codeSnippet: string;
     language?: string;
 }
+export interface NodeEvidence {
+    hasRouteAnnotation?: boolean;
+    routeAnnotationRule?: string;
+    hasSymbolCall?: boolean;
+    symbolCallRule?: string;
+    hasRuntimeTrace?: boolean;
+    runtimeTraceRule?: string;
+    hasAmbiguousOverload?: boolean;
+    ambiguityRule?: string;
+}
 export interface FlowNode {
     id: string;
     type: NodeType;
@@ -23,6 +33,7 @@ export interface FlowNode {
     state: ExecutionState;
     certainty: CertaintyLevel;
     confidence: number;
+    evidence?: NodeEvidence;
     method?: string;
     causalWhy?: CausalWhy;
     codeEvidence?: CodeEvidence;
