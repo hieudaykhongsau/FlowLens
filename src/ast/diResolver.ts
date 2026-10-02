@@ -103,15 +103,103 @@ export class DiResolver {
           }
         }
 
-        // TypeScript / NestJS match
-        if ((filePath.endsWith('.ts') || filePath.endsWith('.js')) && content.includes('@Controller')) {
-          if (content.includes(lastSegment)) {
+        // TypeScript / JavaScript (NestJS, Express, Fastify)
+        if (filePath.endsWith('.ts') || filePath.endsWith('.js')) {
+          if (content.includes('@Controller') && content.includes(lastSegment)) {
             return {
               file: path.relative(workspacePath, filePath).replace(/\\/g, '/'),
               line: 1,
               className: path.basename(filePath, path.extname(filePath)),
               methodName: lastSegment,
               injectedServices: [`${lastSegment}Service`]
+            };
+          }
+          // Express / Fastify / Router match
+          if ((content.includes('router.') || content.includes('app.')) && (content.includes(`'${endpoint}'`) || content.includes(`"${endpoint}"`) || content.includes(lastSegment))) {
+            const lines = content.split('\n');
+            let lineNumber = 1;
+            let handlerName = `${lastSegment}Handler`;
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].includes(lastSegment) && (lines[i].includes('router.') || lines[i].includes('app.'))) {
+                lineNumber = i + 1;
+                const match = lines[i].match(/,\s*([a-zA-Z0-9_]+)\s*\)?$/);
+                if (match) handlerName = match[1];
+                break;
+              }
+            }
+            return {
+              file: path.relative(workspacePath, filePath).replace(/\\/g, '/'),
+              line: lineNumber,
+              className: path.basename(filePath, path.extname(filePath)),
+              methodName: handlerName,
+              injectedServices: [`${lastSegment}Service`]
+            };
+          }
+        }
+
+        // Python (FastAPI, Flask, Django)
+        if (filePath.endsWith('.py')) {
+          if ((content.includes('@router.') || content.includes('@app.') || content.includes('def ')) && 
+              (content.includes(lastSegment) || content.includes(endpoint))) {
+            const lines = content.split('\n');
+            let lineNumber = 1;
+            let funcName = lastSegment;
+            let guard: string | undefined;
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if (line.includes('Depends(') || line.includes('permission_classes') || line.includes('@login_required')) {
+                guard = line.trim();
+              }
+              if ((line.includes('@app.') || line.includes('@router.')) && (line.includes(lastSegment) || line.includes(endpoint))) {
+                lineNumber = i + 1;
+                for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+                  const m = lines[j].match(/def\s+([a-zA-Z0-9_]+)\s*\(/);
+                  if (m) {
+                    funcName = m[1];
+                    lineNumber = j + 1;
+                    break;
+                  }
+                }
+                break;
+              }
+            }
+
+            return {
+              file: path.relative(workspacePath, filePath).replace(/\\/g, '/'),
+              line: lineNumber,
+              className: path.basename(filePath, '.py'),
+              methodName: funcName,
+              guard,
+              injectedServices: [`${funcName}_service`]
+            };
+          }
+        }
+
+        // Go (Gin, Echo, Chi, net/http)
+        if (filePath.endsWith('.go')) {
+          if ((content.includes('.GET(') || content.includes('.POST(') || content.includes('.HandleFunc(')) && 
+              (content.includes(lastSegment) || content.includes(endpoint))) {
+            const lines = content.split('\n');
+            let lineNumber = 1;
+            let handlerName = `${lastSegment}Handler`;
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if ((line.includes('.GET(') || line.includes('.POST(')) && (line.includes(lastSegment) || line.includes(endpoint))) {
+                lineNumber = i + 1;
+                const m = line.match(/,\s*([a-zA-Z0-9_]+)\s*\)/);
+                if (m) handlerName = m[1];
+                break;
+              }
+            }
+
+            return {
+              file: path.relative(workspacePath, filePath).replace(/\\/g, '/'),
+              line: lineNumber,
+              className: path.basename(filePath, '.go'),
+              methodName: handlerName,
+              injectedServices: [`${handlerName}Usecase`]
             };
           }
         }
