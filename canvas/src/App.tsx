@@ -7,7 +7,7 @@ import {
   useEdgesState,
   BackgroundVariant
 } from '@xyflow/react';
-import type { Node, Edge } from '@xyflow/react';
+import type { Node, Edge, ReactFlowInstance } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { FlowLensNode } from './components/FlowLensNode.js';
@@ -22,14 +22,52 @@ export const App: React.FC = () => {
   const [session, setSession] = useState<InvestigationSession>(PRESET_SCENARIOS[0].session);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB');
-  const [selectedNode, setSelectedNode] = useState<FlowNodeData | null>(null);
+  const [selectedNode, setSelectedNode] = useState<FlowNodeData | null>(() => {
+    return PRESET_SCENARIOS[0].session.nodes.find((n) => n.state === 'STOPPED_HERE') || PRESET_SCENARIOS[0].session.nodes[0] || null;
+  });
   const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState<boolean>(true);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const handleSelectNode = useCallback((nodeData: FlowNodeData) => {
+    setSelectedNode(nodeData);
+    setIsInspectorOpen(true);
+  }, []);
+
+  // Tính toán layout khởi tạo ngay từ đầu để tránh màn hình bị đen/trắng trống khi mới load
+  const initialLayout = useMemo(() => {
+    const initSession = PRESET_SCENARIOS[0].session;
+    const rfNodes: Node[] = (initSession.nodes || []).map((n) => ({
+      id: n.id,
+      type: 'flowlensNode',
+      data: {
+        ...n,
+        onSelectNode: handleSelectNode
+      },
+      position: { x: 0, y: 0 }
+    }));
+
+    const rfEdges: Edge[] = (initSession.edges || []).map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      label: e.label,
+      animated: e.animated !== false,
+      style: e.style || { stroke: '#38bdf8', strokeWidth: 2 }
+    }));
+
+    return getLayoutedElements(rfNodes, rfEdges, 'TB');
+  }, [handleSelectNode]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialLayout.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialLayout.edges);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
+  const layoutDirectionRef = useRef<'TB' | 'LR'>('TB');
+  const sessionRef = useRef<InvestigationSession>(session);
+
+  layoutDirectionRef.current = layoutDirection;
+  sessionRef.current = session;
 
   const nodeTypes = useMemo(
     () => ({
@@ -37,11 +75,6 @@ export const App: React.FC = () => {
     }),
     []
   );
-
-  const handleSelectNode = useCallback((nodeData: FlowNodeData) => {
-    setSelectedNode(nodeData);
-    setIsInspectorOpen(true);
-  }, []);
 
   // Sync session nodes and edges to React Flow
   const syncGraph = useCallback(
@@ -69,18 +102,23 @@ export const App: React.FC = () => {
       setNodes(layouted.nodes);
       setEdges(layouted.edges);
 
-      // Auto-open stopped here node if none selected or if it's the root cause
+      // Tự động chọn node STOPPED_HERE
       const stoppedNode = currentSession.nodes.find((n) => n.state === 'STOPPED_HERE');
       if (stoppedNode) {
         setSelectedNode(stoppedNode);
-      } else if (currentSession.nodes.length > 0 && !selectedNode) {
-        setSelectedNode(currentSession.nodes[0]);
       }
+
+      // Tự động căn giữa khung nhìn mượt mà
+      setTimeout(() => {
+        if (reactFlowInstanceRef.current) {
+          reactFlowInstanceRef.current.fitView({ padding: 0.25, duration: 250 });
+        }
+      }, 60);
     },
-    [handleSelectNode, setNodes, setEdges, selectedNode]
+    [handleSelectNode, setNodes, setEdges]
   );
 
-  // WebSocket Connection
+  // WebSocket Connection - Kết nối DUY NHẤT một lần trên mount (không reconnect khi đổi layoutDirection hay chọn node)
   useEffect(() => {
     const wsUrl = `ws://${window.location.hostname || 'localhost'}:9876`;
     let ws: WebSocket | null = null;
@@ -100,7 +138,8 @@ export const App: React.FC = () => {
           if (message.type === 'INIT_SESSION' || message.type === 'SESSION_UPDATE') {
             if (message.data) {
               setSession(message.data);
-              syncGraph(message.data, layoutDirection);
+              // Luôn dùng layoutDirection hiện tại của user thay vì bị reset về mặc định
+              syncGraph(message.data, layoutDirectionRef.current);
             }
           }
         } catch (err) {
@@ -125,16 +164,22 @@ export const App: React.FC = () => {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       ws?.close();
     };
-  }, [layoutDirection, syncGraph]);
+  }, [syncGraph]);
 
-  // Initial layout calculation
+  // Căn giữa lần đầu khi component mount
   useEffect(() => {
-    syncGraph(session, layoutDirection);
-  }, [layoutDirection]);
+    const timer = setTimeout(() => {
+      if (reactFlowInstanceRef.current) {
+        reactFlowInstanceRef.current.fitView({ padding: 0.25, duration: 200 });
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleToggleLayout = () => {
     const nextDir = layoutDirection === 'TB' ? 'LR' : 'TB';
     setLayoutDirection(nextDir);
+    layoutDirectionRef.current = nextDir;
     syncGraph(session, nextDir);
   };
 
@@ -224,7 +269,13 @@ export const App: React.FC = () => {
         isConnected={isConnected}
         layoutDirection={layoutDirection}
         onToggleLayout={handleToggleLayout}
-        onFitView={() => syncGraph(session, layoutDirection)}
+        onFitView={() => {
+          if (reactFlowInstanceRef.current) {
+            reactFlowInstanceRef.current.fitView({ padding: 0.25, duration: 250 });
+          } else {
+            syncGraph(session, layoutDirection);
+          }
+        }}
         onResetDemo={handleResetDemo}
         onOpenSimulator={() => setIsSimulatorOpen(true)}
         isInspectorOpen={isInspectorOpen}
@@ -243,6 +294,10 @@ export const App: React.FC = () => {
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onInit={(instance) => {
+              reactFlowInstanceRef.current = instance;
+              instance.fitView({ padding: 0.25, duration: 200 });
+            }}
             nodeTypes={nodeTypes}
             fitView
             fitViewOptions={{ padding: 0.25 }}
