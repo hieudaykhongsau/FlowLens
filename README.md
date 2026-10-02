@@ -10,7 +10,6 @@
   <img src="https://img.shields.io/badge/Runtime-Node.js%2020%2B%20%7C%20TypeScript-green?style=for-the-badge&logo=node.js" alt="Node.js"/>
   <img src="https://img.shields.io/badge/Canvas-React%2019%20%7C%20React%20Flow-61DAFB?style=for-the-badge&logo=react" alt="React Flow"/>
   <img src="https://img.shields.io/badge/Style-Tailwind%20CSS%20v4-38B2AC?style=for-the-badge&logo=tailwind-css" alt="Tailwind"/>
-  <img src="https://img.shields.io/badge/License-MIT-orange?style=for-the-badge" alt="MIT License"/>
 </p>
 
 ---
@@ -222,7 +221,3 @@ http://localhost:9876
 - [ ] **Giai đoạn 4 (Ecosystem Plugin):** Đóng gói extension 1-click cho Antigravity IDE, Cursor và VS Code Marketplace.
 
 ---
-
-<p align="center">
-  Được phát triển với niềm đam mê mang lại sự minh bạch và tin cậy cho kỷ nguyên AI Agent Coding.
-</p>
