@@ -7,11 +7,13 @@ import {
   Cpu,
   Database,
   ExternalLink,
-  AlertTriangle,
+  AlertCircle,
   CheckCircle2,
   XCircle,
   Clock,
-  Layers
+  Layers,
+  FileCode2,
+  Timer
 } from 'lucide-react';
 import type { FlowNodeData } from '../types.js';
 
@@ -36,125 +38,185 @@ export const FlowLensNode: React.FC<FlowLensNodeProps> = ({
     certainty,
     confidence,
     method,
+    latencyMs,
     onSelectNode
   } = data;
 
-  const getTypeIcon = () => {
+  const getTypeMeta = () => {
     switch (type) {
       case 'entrypoint':
-        return <Globe className="w-4 h-4 text-cyan-400" />;
+        return {
+          icon: <Globe className="w-3.5 h-3.5 text-blue-400" />,
+          title: 'CONTROLLER',
+          color: 'text-blue-400 bg-blue-950/60 border-blue-900/60'
+        };
       case 'filter':
-        return <Shield className="w-4 h-4 text-indigo-400" />;
+        return {
+          icon: <Shield className="w-3.5 h-3.5 text-sky-400" />,
+          title: 'SECURITY FILTER',
+          color: 'text-sky-400 bg-sky-950/60 border-sky-900/60'
+        };
       case 'guard':
-        return <ShieldAlert className="w-4 h-4 text-amber-400" />;
+        return {
+          icon: <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />,
+          title: 'ACCESS GUARD',
+          color: 'text-amber-400 bg-amber-950/60 border-amber-900/60'
+        };
       case 'service':
-        return <Cpu className="w-4 h-4 text-purple-400" />;
+        return {
+          icon: <Cpu className="w-3.5 h-3.5 text-indigo-400" />,
+          title: 'BUSINESS SERVICE',
+          color: 'text-indigo-400 bg-indigo-950/60 border-indigo-900/60'
+        };
       case 'repository':
-        return <Layers className="w-4 h-4 text-emerald-400" />;
+        return {
+          icon: <Layers className="w-3.5 h-3.5 text-teal-400" />,
+          title: 'DATA REPOSITORY',
+          color: 'text-teal-400 bg-teal-950/60 border-teal-900/60'
+        };
       case 'database':
-        return <Database className="w-4 h-4 text-blue-400" />;
+        return {
+          icon: <Database className="w-3.5 h-3.5 text-emerald-400" />,
+          title: 'DATABASE ENGINE',
+          color: 'text-emerald-400 bg-emerald-950/60 border-emerald-900/60'
+        };
       case 'external_api':
-        return <ExternalLink className="w-4 h-4 text-orange-400" />;
+        return {
+          icon: <ExternalLink className="w-3.5 h-3.5 text-orange-400" />,
+          title: 'EXTERNAL CLIENT',
+          color: 'text-orange-400 bg-orange-950/60 border-orange-900/60'
+        };
       case 'failure_node':
-        return <AlertTriangle className="w-4 h-4 text-rose-400" />;
       default:
-        return <Cpu className="w-4 h-4 text-slate-400" />;
+        return {
+          icon: <AlertCircle className="w-3.5 h-3.5 text-rose-400" />,
+          title: 'HANDLER',
+          color: 'text-rose-400 bg-rose-950/60 border-rose-900/60'
+        };
     }
+  };
+
+  const getMethodBadge = (m?: string) => {
+    if (!m) return null;
+    const upper = m.toUpperCase();
+    let color = 'bg-blue-950 text-blue-300 border-blue-800';
+    if (upper === 'GET') color = 'bg-emerald-950 text-emerald-300 border-emerald-800';
+    if (upper === 'PUT' || upper === 'PATCH') color = 'bg-amber-950 text-amber-300 border-amber-800';
+    if (upper === 'DELETE') color = 'bg-rose-950 text-rose-300 border-rose-800';
+
+    return (
+      <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${color}`}>
+        {upper}
+      </span>
+    );
   };
 
   const getStateStyle = () => {
     switch (state) {
       case 'PASSED':
         return {
-          card: 'border-emerald-500/80 bg-slate-900/90 shadow-[0_0_20px_rgba(16,185,129,0.15)]',
-          badge: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30',
-          icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />,
+          card: 'border-emerald-600/60 bg-slate-900 hover:border-emerald-500',
+          badge: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
+          icon: <CheckCircle2 className="w-3 h-3 text-emerald-400" />,
           text: 'PASSED'
         };
       case 'STOPPED_HERE':
         return {
-          card: 'border-rose-500 bg-rose-950/40 pulse-stopped shadow-[0_0_30px_rgba(244,63,94,0.35)] ring-1 ring-rose-500',
-          badge: 'bg-rose-500 text-white font-bold border border-rose-400 animate-pulse',
-          icon: <XCircle className="w-3.5 h-3.5 text-white" />,
+          card: 'border-rose-500 bg-slate-900 ring-2 ring-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.2)]',
+          badge: 'bg-rose-600 text-white font-bold border border-rose-400',
+          icon: <XCircle className="w-3 h-3 text-white" />,
           text: 'STOPPED HERE'
         };
       case 'SKIPPED':
         return {
-          card: 'border-slate-800/80 bg-slate-950/60 opacity-55 contrast-75',
-          badge: 'bg-slate-800/60 text-slate-400 border border-slate-700/50',
-          icon: <Clock className="w-3.5 h-3.5 text-slate-500" />,
+          card: 'border-slate-800 bg-slate-950/50 opacity-60 hover:opacity-85',
+          badge: 'bg-slate-800/80 text-slate-400 border border-slate-700/60',
+          icon: <Clock className="w-3 h-3 text-slate-500" />,
           text: 'SKIPPED'
         };
       case 'NOT_VERIFIED':
       default:
         return {
-          card: 'border-slate-700/70 border-dashed bg-slate-900/70 shadow-sm',
-          badge: 'bg-slate-800/80 text-slate-300 border border-slate-700/60',
-          icon: <Clock className="w-3.5 h-3.5 text-slate-400" />,
+          card: 'border-slate-700/80 border-dashed bg-slate-900/60',
+          badge: 'bg-slate-800 text-slate-300 border border-slate-700',
+          icon: <Clock className="w-3 h-3 text-slate-400" />,
           text: 'NOT VERIFIED'
         };
     }
   };
 
+  const typeMeta = getTypeMeta();
   const stateStyle = getStateStyle();
 
   return (
     <div
       onClick={() => onSelectNode && onSelectNode(data)}
-      className={`group relative w-[320px] rounded-xl border backdrop-blur-md transition-all duration-200 cursor-pointer hover:border-sky-400 hover:shadow-[0_0_25px_rgba(56,189,248,0.25)] ${stateStyle.card}`}
+      className={`group relative w-[340px] rounded-lg border transition-all duration-150 cursor-pointer shadow-md select-none ${stateStyle.card}`}
     >
       <Handle
         type="target"
         position={targetPosition}
-        className="!w-2.5 !h-2.5 !bg-sky-400 !border-slate-950"
+        className="!w-2 !h-2 !bg-slate-400 !border-slate-900 group-hover:!bg-sky-400"
       />
 
-      <div className="p-3.5">
-        {/* Header row: Category & State Badge */}
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase text-slate-300">
-            {getTypeIcon()}
-            <span className="truncate">{type.replace('_', ' ')}</span>
-            {method && (
-              <span className="px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 text-[10px] font-mono border border-sky-800/60">
-                {method}
+      <div className="p-3">
+        {/* Top bar: Layer Category + Method + Latency + State Badge */}
+        <div className="flex items-center justify-between gap-1.5 mb-2">
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <span
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium border ${typeMeta.color}`}
+            >
+              {typeMeta.icon}
+              <span className="truncate">{typeMeta.title}</span>
+            </span>
+            {getMethodBadge(method)}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {latencyMs !== undefined && (
+              <span className="flex items-center gap-0.5 text-[10px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                <Timer className="w-2.5 h-2.5 text-slate-400" />
+                {latencyMs > 4000 ? `${latencyMs}ms (timeout)` : `${latencyMs}ms`}
               </span>
             )}
-          </div>
-          <div
-            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] tracking-wide font-medium ${stateStyle.badge}`}
-          >
-            {stateStyle.icon}
-            <span>{stateStyle.text}</span>
+            <span
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono tracking-wide ${stateStyle.badge}`}
+            >
+              {stateStyle.icon}
+              <span>{stateStyle.text}</span>
+            </span>
           </div>
         </div>
 
-        {/* Main Title & Subtitle */}
-        <div className="mb-2.5">
-          <h4 className="text-sm font-semibold text-slate-100 font-mono tracking-tight leading-snug line-clamp-2">
+        {/* Main Content: Title & Function */}
+        <div className="mb-2">
+          <div className="text-[13px] font-medium text-slate-100 font-mono leading-snug line-clamp-2">
             {label}
-          </h4>
+          </div>
           {sublabel && (
-            <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
+            <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
               {sublabel}
-            </p>
+            </div>
           )}
         </div>
 
-        {/* File & Line Location */}
+        {/* Source File Location */}
         {file && (
-          <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 bg-slate-950/80 px-2 py-1 rounded border border-slate-800/80 mb-2.5">
-            <span className="truncate max-w-[210px]" title={file}>
-              {file.split('/').pop()}
+          <div className="flex items-center justify-between text-[11px] font-mono bg-slate-950 px-2 py-1 rounded border border-slate-800/80 mb-2 text-slate-300">
+            <span className="flex items-center gap-1 truncate max-w-[240px]" title={file}>
+              <FileCode2 className="w-3 h-3 text-slate-400 shrink-0" />
+              <span className="truncate">{file.split('/').pop()}</span>
             </span>
-            {line && <span className="text-sky-400 font-medium">L{line}</span>}
+            {line && (
+              <span className="text-sky-400 font-semibold shrink-0">:{line}</span>
+            )}
           </div>
         )}
 
-        {/* Confidence & Certainty Footer */}
-        <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[10px]">
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 font-mono">Certainty:</span>
+        {/* Footer: Evidence & Certainty Score */}
+        <div className="flex items-center justify-between pt-1.5 border-t border-slate-800 text-[10px] text-slate-400 font-mono">
+          <div className="flex items-center gap-1">
+            <span className="text-slate-400">Certainty:</span>
             <span
               className={`font-semibold ${
                 certainty === 'EXPLICIT'
@@ -167,16 +229,14 @@ export const FlowLensNode: React.FC<FlowLensNodeProps> = ({
               {certainty}
             </span>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-12 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+          <div className="flex items-center gap-1.5">
+            <div className="w-10 bg-slate-800 rounded-full h-1 overflow-hidden">
               <div
-                className="bg-sky-400 h-full rounded-full transition-all"
+                className="bg-sky-400 h-full rounded-full"
                 style={{ width: `${Math.round(confidence * 100)}%` }}
               />
             </div>
-            <span className="font-mono text-slate-300 font-medium">
-              {confidence.toFixed(2)}
-            </span>
+            <span>{(confidence * 100).toFixed(0)}%</span>
           </div>
         </div>
       </div>
@@ -184,7 +244,7 @@ export const FlowLensNode: React.FC<FlowLensNodeProps> = ({
       <Handle
         type="source"
         position={sourcePosition}
-        className="!w-2.5 !h-2.5 !bg-sky-400 !border-slate-950"
+        className="!w-2 !h-2 !bg-slate-400 !border-slate-900 group-hover:!bg-sky-400"
       />
     </div>
   );

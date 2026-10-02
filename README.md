@@ -177,7 +177,7 @@ npm run build
 
 ### 8.3. Cấu hình MCP Server vào IDE của bạn
 
-Thêm cấu hình sau vào file cấu hình MCP của IDE (ví dụ: `mcp_config.json` hoặc cấu hình Claude/Cursor Settings):
+Thêm cấu hình sau vào file cấu hình MCP của IDE (ví dụ: `mcp_config.json` của Antigravity/Cursor/Windsurf hoặc `claude_desktop_config.json`):
 
 ```json
 {
@@ -193,16 +193,89 @@ Thêm cấu hình sau vào file cấu hình MCP của IDE (ví dụ: `mcp_config
 }
 ```
 
-### 8.4. Khởi chạy Canvas giao diện
-Khi MCP Server hoạt động, server sẽ tự động mở WebSocket hub tại cổng `9876`.  
-Mở trình duyệt bất kỳ và truy cập:
-```text
-http://localhost:9876
+> [!TIP]
+> Trên hệ điều hành Windows, hãy sử dụng dấu gạch chéo xuôi `/` trong mảng `args` như trên (`d:/MyProject/FlowLens/dist/server.js`) để đảm bảo Node.js phân giải đường dẫn chính xác.
+
+### 8.4. Cấu hình Rule để AI Agent luôn tự động kích hoạt FlowLens
+
+Để AI Agent (Cursor, Antigravity, Claude Code) **luôn luôn nhớ dùng FlowLens** ngay khi bạn chỉ chat vắn tắt *"tôi bị lỗi này"*, hãy tạo hoặc thêm vào file quy tắc dự án (ví dụ `.cursorrules` hoặc `AGENTS.md` tại thư mục gốc của project bạn đang làm việc):
+
+```markdown
+# FlowLens Autonomous Investigation Protocol
+Khi người dùng thông báo lỗi API, gửi lệnh cURL lỗi hoặc dán log stack trace:
+1. Luôn kích hoạt tool `trace_endpoint_pipeline` của FlowLens MCP để quét AST và dựng sơ đồ luồng thực thi lên Canvas (http://localhost:9876).
+2. Kiểm tra các rào chắn điều kiện (@PreAuthorize, Guard, Validation DTO, if-throw) tại Controller và Service.
+3. Cập nhật điểm dừng thực tế `STOPPED_HERE` và các node sau thành `SKIPPED` thông qua tool `update_investigation_session`.
+4. Đính kèm phân tích Causal WHY (Condition, Actual State, Verdict, Recommendation) và Code Evidence để developer đối chiếu trực quan.
 ```
 
 ---
 
-## 9. Hệ thống tài liệu chi tiết
+## 9. Hướng dẫn sử dụng & Mẫu Prompt chuẩn (Prompt Recipes)
+
+FlowLens hỗ trợ 2 chế độ làm việc linh hoạt:
+
+### 9.1. Chế độ 1: Thử nghiệm trực tiếp trên Web Canvas (Không cần kết nối Agent)
+Khi muốn xem thử cách FlowLens phân tích hoặc demo cho đồng nghiệp:
+1. Đảm bảo server đang chạy (`npm start` hoặc process chạy nền tại cổng `9876`).
+2. Mở trình duyệt và truy cập: **`http://localhost:9876`**.
+3. Bấm vào nút **`Kịch Bản Lỗi Mẫu`** ở thanh điều khiển trên cùng.
+4. Chọn một trong các kịch bản lỗi backend kinh điển:
+   * **[403 Forbidden]:** Spring Security RBAC `@PreAuthorize("hasRole('ADMIN')")`.
+   * **[500 Server Error]:** Cổng thanh toán ngoại vi bị quá hạn kết nối `SocketTimeoutException`.
+   * **[400 Bad Request]:** Hibernate Validator `@NotBlank` bắt lỗi thiếu trường DTO.
+   * Hoặc tự nhập Endpoint, Method và Mã lỗi tùy ý để hệ thống tự động sinh sơ đồ.
+
+### 9.2. Chế độ 2: Debug dự án thực tế cùng AI Coding Agent
+Khi đang code trong IDE và gặp lỗi API, bạn chỉ cần chat trực tiếp với AI Agent. Dưới đây là các **mẫu prompt chuẩn hóa** để Agent gọi tool FlowLens chính xác nhất:
+
+#### 📌 Mẫu 1: Khi bạn có sẵn lệnh cURL bị lỗi (Khuyên dùng)
+```text
+Tôi vừa gọi lệnh cURL này bị trả về mã lỗi 403 Forbidden:
+curl -X POST http://localhost:8080/api/v1/regulations/approve \
+  -H "Authorization: Bearer <TOKEN_OPERATOR>" \
+  -H "Content-Type: application/json" \
+  -d '{"regulationId": 105, "status": "APPROVED"}'
+
+Hãy dùng FlowLens MCP quét pipeline endpoint này, xác định chính xác request chết ở tầng nào (Controller, Filter hay Service), và đồng bộ kết quả lên Canvas http://localhost:9876.
+```
+
+#### 📌 Mẫu 2: Prompt vắn tắt (Chỉ có Method + Endpoint + Mã lỗi)
+```text
+API POST /api/v1/regulations/approve đang bị lỗi 403 Forbidden. 
+Hãy dùng tool trace_endpoint_pipeline của FlowLens dựng sơ đồ luồng thực thi, kiểm tra điều kiện phân quyền và chỉ ra điểm dừng STOPPED_HERE kèm thẻ Causal WHY.
+```
+
+#### 📌 Mẫu 3: Khi có đoạn Log lỗi / Stack Trace thực tế
+```text
+Tôi nhận được log lỗi sau khi gọi API thanh toán:
+org.springframework.web.client.ResourceAccessException: I/O error on POST request for "https://sandbox.vnpayment.vn/payment": Read timed out
+  at org.springframework.web.client.RestTemplate.doExecute(RestTemplate.java:785)
+  at com.fis.order.client.VNPayPaymentGatewayClient.processPayment(VNPayPaymentGatewayClient.java:94)
+
+Hãy dùng FlowLens đối chiếu stack trace này với pipeline API POST /api/v1/orders/checkout, đánh dấu node gây lỗi là STOPPED_HERE, các node phía sau thành SKIPPED và đề xuất phương án khắc phục.
+```
+
+#### 📌 Mẫu 4: Yêu cầu chạy kiểm thử xác minh Runtime (Active Runner / Ephemeral Mock)
+```text
+Hãy dùng tool execute_sandboxed_runner của FlowLens để chạy test suite kiểm tra endpoint POST /api/v1/categories. Nếu chưa có test sẵn, hãy sinh mock test tạm thời để kiểm chứng lỗi 400 Bad Request và đồng bộ lên Canvas.
+```
+
+---
+
+## 10. Danh mục công cụ FlowLens MCP (Tools Reference)
+
+| Tên Tool | Vai trò | Đầu vào chính |
+|---|---|---|
+| `trace_endpoint_pipeline` | **Composite Macro Tool:** Quét tĩnh toàn bộ chuỗi mắt xích (Route $\rightarrow$ Filter $\rightarrow$ Injected Service $\rightarrow$ Repo $\rightarrow$ DB) trong **1 round-trip**, tiết kiệm hơn 70% token. | `endpoint`, `method`, `workspacePath`, `errorCode` |
+| `update_investigation_session` | Cập nhật phiên điều tra, đánh dấu trạng thái node (`PASSED`, `STOPPED_HERE`, `SKIPPED`), đính kèm **Causal WHY Card** và **Code Evidence** để đồng bộ tức thì lên 2D Canvas. | `sessionId`, `currentStep`, `nodes`, `edges`, `rootCauseNodeId` |
+| `execute_sandboxed_runner` | Chạy an toàn test runner (`mvn`, `gradle`, `npm`, `pytest`, `go`) hoặc đọc passive log để bắt stack trace thực tế. | `command`, `args`, `cwd`, `mode` (`active`, `ephemeral_mock`, `passive_log`) |
+| `codebase_search` | Tìm kiếm symbol, annotation, route trong codebase bằng thuật toán tất định siêu tốc. | `query`, `workspacePath`, `fileExtensions` |
+| `find_symbol_references` | Phân giải interface $\rightarrow$ implementation thực tế (giải quyết đa hình & Dependency Injection). | `symbolName`, `workspacePath` |
+
+---
+
+## 11. Hệ thống tài liệu chi tiết
 
 Để tìm hiểu sâu hơn về kiến trúc và đặc tả nghiệp vụ, vui lòng tham khảo các tài liệu chuyên đề trong thư mục `docs/`:
 
@@ -212,7 +285,7 @@ http://localhost:9876
 
 ---
 
-## 10. Lộ trình phát triển (Roadmap)
+## 12. Lộ trình phát triển (Roadmap)
 
 - [x] Thiết kế kiến trúc tổng thể, mô hình nghiệp vụ & đặc tả công nghệ.
 - [x] **Giai đoạn 1 (PoC MCP Core):** Hoàn thiện MCP Server với các tool cốt lõi (`trace_endpoint_pipeline`, `update_investigation_session`, `execute_sandboxed_runner`, `codebase_search`, `find_symbol_references`).

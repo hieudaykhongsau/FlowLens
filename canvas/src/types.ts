@@ -26,6 +26,12 @@ export interface CodeEvidence {
   language?: string;
 }
 
+export interface CodeDiff {
+  oldCode: string;
+  newCode: string;
+  filename?: string;
+}
+
 export interface FlowNodeData {
   id: string;
   type: NodeType;
@@ -37,8 +43,10 @@ export interface FlowNodeData {
   certainty: CertaintyLevel;
   confidence: number;
   method?: string;
+  latencyMs?: number;
   causalWhy?: CausalWhy;
   codeEvidence?: CodeEvidence;
+  codeDiff?: CodeDiff;
   runtimeLogs?: string[];
   executionTimeMs?: number;
   onSelectNode?: (nodeData: FlowNodeData) => void;
@@ -66,6 +74,8 @@ export interface InvestigationSession {
   id: string;
   endpoint: string;
   method: string;
+  statusCode?: number;
+  latencyMs?: number;
   status: 'running' | 'completed' | 'failed';
   createdAt: string;
   updatedAt: string;

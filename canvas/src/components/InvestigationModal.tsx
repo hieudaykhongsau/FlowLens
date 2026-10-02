@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import {
   X,
   Play,
-  Sparkles
+  SlidersHorizontal,
+  ArrowRight
 } from 'lucide-react';
 import type { InvestigationSession } from '../types.js';
 
@@ -17,32 +18,36 @@ export const PRESET_SCENARIOS: {
   name: string;
   method: string;
   endpoint: string;
+  statusCode: number;
   statusText: string;
   desc: string;
   session: InvestigationSession;
 }[] = [
   {
     id: '403_rbac',
-    name: '1. [403 Forbidden] Lỗi phân quyền Spring Boot RBAC',
+    name: '1. [403 Forbidden] Spring Security @PreAuthorize Access Denied',
     method: 'POST',
     endpoint: '/api/v1/regulations/approve',
+    statusCode: 403,
     statusText: '403 Forbidden',
-    desc: 'Request bị chặn tại @PreAuthorize do user chỉ có ROLE_OPERATOR, thiếu ROLE_ADMIN.',
+    desc: 'Yêu cầu quyền ROLE_ADMIN để phê duyệt quy định. Token gửi lên chỉ mang quyền ROLE_OPERATOR.',
     session: {
       id: 'session-403',
       endpoint: '/api/v1/regulations/approve',
       method: 'POST',
+      statusCode: 403,
+      latencyMs: 14,
       status: 'completed',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       certaintyScore: 0.88,
       steps: [
-        { stepNumber: 1, title: 'Nhận cURL / Mã lỗi', status: 'completed', summary: 'POST /api/v1/regulations/approve (403)', timestamp: new Date().toISOString() },
-        { stepNumber: 2, title: 'Tạo Session MCP', status: 'completed', summary: 'WebSocket hub mở tại port 9876', timestamp: new Date().toISOString() },
-        { stepNumber: 3, title: 'Quét Pipeline AST', status: 'completed', summary: 'Định vị Controller -> Guard -> Service -> Repo', timestamp: new Date().toISOString() },
-        { stepNumber: 4, title: 'Xác minh Runtime 3 cấp độ', status: 'completed', summary: 'MockMvc test trả về 403 Forbidden', timestamp: new Date().toISOString() },
-        { stepNumber: 5, title: 'Kết luận Nhân - Quả (WHY)', status: 'completed', summary: 'Chết tại Guard @PreAuthorize', timestamp: new Date().toISOString() },
-        { stepNumber: 6, title: 'Báo cáo & Hiển thị Canvas', status: 'completed', summary: 'Đồng bộ hoàn tất lên màn hình 2D', timestamp: new Date().toISOString() }
+        { stepNumber: 1, title: 'Nhận cURL / Request', status: 'completed', summary: 'POST /api/v1/regulations/approve (403)', timestamp: new Date().toISOString() },
+        { stepNumber: 2, title: 'Khởi tạo Session MCP', status: 'completed', summary: 'Gán session ID & kết nối WebSocket 9876', timestamp: new Date().toISOString() },
+        { stepNumber: 3, title: 'Quét Pipeline AST', status: 'completed', summary: 'Controller -> Guard -> Service -> Repo', timestamp: new Date().toISOString() },
+        { stepNumber: 4, title: 'Kiểm thử Runtime', status: 'completed', summary: 'MockMvc test trả về 403 Forbidden', timestamp: new Date().toISOString() },
+        { stepNumber: 5, title: 'Phân tích Nhân - Quả', status: 'completed', summary: 'Dừng tại Guard @PreAuthorize L41', timestamp: new Date().toISOString() },
+        { stepNumber: 6, title: 'Đồng bộ kết quả', status: 'completed', summary: 'Cập nhật sơ đồ luồng thực thi', timestamp: new Date().toISOString() }
       ],
       nodes: [
         {
@@ -56,19 +61,21 @@ export const PRESET_SCENARIOS: {
           certainty: 'EXPLICIT',
           confidence: 0.95,
           method: 'POST',
-          runtimeLogs: ['HTTP POST received from 10.20.1.5', 'Request Header: Authorization=Bearer eyJhbGci...']
+          latencyMs: 2,
+          runtimeLogs: ['HTTP POST received from client', 'Authorization: Bearer eyJhbGci...']
         },
         {
           id: 'node-auth-filter',
           type: 'filter',
           label: 'JwtAuthenticationFilter',
-          sublabel: 'doFilterInternal() - Token Verification',
+          sublabel: 'doFilterInternal() - Parse JWT Claims',
           file: 'src/main/java/com/fis/security/JwtAuthenticationFilter.java',
           line: 88,
           state: 'PASSED',
           certainty: 'EXPLICIT',
           confidence: 0.90,
-          runtimeLogs: ['Token decoded successfully. Subject: user_8392, Roles: [ROLE_OPERATOR]']
+          latencyMs: 4,
+          runtimeLogs: ['Token verified. Claims: sub=user_8392, authorities=[ROLE_OPERATOR]']
         },
         {
           id: 'node-rbac-guard',
@@ -80,11 +87,12 @@ export const PRESET_SCENARIOS: {
           state: 'STOPPED_HERE',
           certainty: 'EXPLICIT',
           confidence: 1.0,
+          latencyMs: 8,
           causalWhy: {
-            condition: "Người dùng phải có role 'ROLE_ADMIN' để phê duyệt quy định quy chế.",
-            actualState: "Token gửi lên chỉ chứa 'ROLE_OPERATOR', thiếu quyền quản trị.",
-            verdict: "403 FORBIDDEN: Access Denied tại SecurityExpressionRoot.hasRole()",
-            recommendation: "Cấp thêm quyền ROLE_ADMIN cho tài khoản kiểm thử hoặc cập nhật chính sách RBAC."
+            condition: "Tài khoản cần có quyền 'ROLE_ADMIN' để thực hiện thao tác phê duyệt quy định.",
+            actualState: "JWT Token thực tế mang quyền 'ROLE_OPERATOR', không thỏa mãn hasRole('ADMIN').",
+            verdict: "403 FORBIDDEN: AccessDeniedException tại SecurityExpressionRoot.hasRole()",
+            recommendation: "Bổ sung role 'ROLE_ADMIN' cho tài khoản hoặc mở rộng chính sách phân quyền cho phép 'ROLE_OPERATOR'."
           },
           codeEvidence: {
             file: 'src/main/java/com/fis/category/controller/RegulationTypeController.java',
@@ -96,8 +104,13 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
     return ResponseEntity.ok(regulationTypeService.approve(dto));
 }`
           },
+          codeDiff: {
+            filename: 'RegulationTypeController.java',
+            oldCode: '@PreAuthorize("hasRole(\'ADMIN\')")',
+            newCode: '@PreAuthorize("hasAnyRole(\'ADMIN\', \'OPERATOR\')")'
+          },
           runtimeLogs: [
-            'WARN [SecurityInterceptor] Access is denied (user is not authorized)',
+            'WARN [org.springframework.security.access.intercept.AbstractSecurityInterceptor] Access is denied (user is not authorized)',
             'org.springframework.security.access.AccessDeniedException: Access is denied'
           ]
         },
@@ -135,36 +148,39 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
         }
       ],
       edges: [
-        { id: 'e1-2', source: 'node-entrypoint', target: 'node-auth-filter', label: 'HTTP Request', animated: true },
-        { id: 'e2-3', source: 'node-auth-filter', target: 'node-rbac-guard', label: 'Authenticated Context', animated: true },
+        { id: 'e1-2', source: 'node-entrypoint', target: 'node-auth-filter', label: 'HTTP Context', animated: true },
+        { id: 'e2-3', source: 'node-auth-filter', target: 'node-rbac-guard', label: 'Auth Token', animated: true },
         { id: 'e3-4', source: 'node-rbac-guard', target: 'node-service', label: 'BLOCKED (403)', animated: false, style: { stroke: '#ef4444', strokeDasharray: '4 4' } },
-        { id: 'e4-5', source: 'node-service', target: 'node-repo', label: 'Call repository', animated: false },
-        { id: 'e5-6', source: 'node-repo', target: 'node-db', label: 'SQL UPDATE', animated: false }
+        { id: 'e4-5', source: 'node-service', target: 'node-repo', label: 'Bypassed', animated: false },
+        { id: 'e5-6', source: 'node-repo', target: 'node-db', label: 'Bypassed', animated: false }
       ]
     }
   },
   {
     id: '500_payment_timeout',
-    name: '2. [500 Gateway Timeout] Cổng thanh toán ngoại vi bị treo',
+    name: '2. [500 Server Error] External Payment Gateway SocketTimeout',
     method: 'POST',
     endpoint: '/api/v1/orders/checkout',
-    statusText: '500 Internal Error',
-    desc: 'Đã qua Controller và Service nghiệp vụ nhưng sập tại ExternalPaymentClient do SocketTimeout.',
+    statusCode: 500,
+    statusText: '500 Gateway Timeout',
+    desc: 'Đã hoàn tất Controller và Service, nhưng bị crash tại tầng gọi API đối tác do quá hạn timeout 5000ms.',
     session: {
       id: 'session-500',
       endpoint: '/api/v1/orders/checkout',
       method: 'POST',
+      statusCode: 500,
+      latencyMs: 5024,
       status: 'completed',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       certaintyScore: 0.92,
       steps: [
-        { stepNumber: 1, title: 'Nhận cURL / Mã lỗi', status: 'completed', summary: 'POST /api/v1/orders/checkout (500)', timestamp: new Date().toISOString() },
-        { stepNumber: 2, title: 'Tạo Session MCP', status: 'completed', summary: 'Tạo session điều tra lỗi 500', timestamp: new Date().toISOString() },
-        { stepNumber: 3, title: 'Quét Pipeline AST', status: 'completed', summary: 'Dò vết OrderController -> OrderService -> VNPayClient', timestamp: new Date().toISOString() },
-        { stepNumber: 4, title: 'Xác minh Runtime 3 cấp độ', status: 'completed', summary: 'Khớp Stack Trace java.net.SocketTimeoutException', timestamp: new Date().toISOString() },
-        { stepNumber: 5, title: 'Kết luận Nhân - Quả (WHY)', status: 'completed', summary: 'Điểm chết tại ExternalPaymentClient', timestamp: new Date().toISOString() },
-        { stepNumber: 6, title: 'Báo cáo & Hiển thị Canvas', status: 'completed', summary: 'Cảnh báo Database Order chưa commit tiền', timestamp: new Date().toISOString() }
+        { stepNumber: 1, title: 'Nhận cURL / Request', status: 'completed', summary: 'POST /api/v1/orders/checkout (500)', timestamp: new Date().toISOString() },
+        { stepNumber: 2, title: 'Khởi tạo Session MCP', status: 'completed', summary: 'Gán session ID cho lỗi timeout', timestamp: new Date().toISOString() },
+        { stepNumber: 3, title: 'Quét Pipeline AST', status: 'completed', summary: 'OrderController -> OrderService -> VNPayClient', timestamp: new Date().toISOString() },
+        { stepNumber: 4, title: 'Kiểm thử Runtime', status: 'completed', summary: 'Bắt được SocketTimeoutException', timestamp: new Date().toISOString() },
+        { stepNumber: 5, title: 'Phân tích Nhân - Quả', status: 'completed', summary: 'Dừng tại VNPayPaymentGatewayClient L94', timestamp: new Date().toISOString() },
+        { stepNumber: 6, title: 'Đồng bộ kết quả', status: 'completed', summary: 'Cảnh báo Database Order chưa commit tiền', timestamp: new Date().toISOString() }
       ],
       nodes: [
         {
@@ -177,7 +193,8 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           state: 'PASSED',
           certainty: 'EXPLICIT',
           confidence: 0.95,
-          method: 'POST'
+          method: 'POST',
+          latencyMs: 3
         },
         {
           id: 'node-order-service',
@@ -188,7 +205,8 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           line: 65,
           state: 'PASSED',
           certainty: 'EXPLICIT',
-          confidence: 0.90
+          confidence: 0.90,
+          latencyMs: 18
         },
         {
           id: 'node-payment-client',
@@ -200,11 +218,12 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           state: 'STOPPED_HERE',
           certainty: 'EXPLICIT',
           confidence: 1.0,
+          latencyMs: 5003,
           causalWhy: {
-            condition: "Cổng thanh toán đối tác phải phản hồi trong thời hạn connectTimeout = 5000ms.",
-            actualState: "Server đối tác quá tải, không trả response sau 5000ms dẫn đến kết nối bị drop.",
+            condition: "Cổng thanh toán ngoại vi phải phản hồi trong giới hạn connectTimeout = 5000ms.",
+            actualState: "Server đối tác quá tải, không trả response sau 5000ms dẫn đến kết nối bị ngắt đột ngột.",
             verdict: "500 GATEWAY TIMEOUT: java.net.SocketTimeoutException: Read timed out",
-            recommendation: "Bổ sung cơ chế Circuit Breaker (Resilience4j) với fallback hoặc tăng timeout lên 10s có cơ chế retry bất đồng bộ."
+            recommendation: "Bổ sung Circuit Breaker (Resilience4j) có fallback và tăng timeout cấu hình lên 10000ms."
           },
           codeEvidence: {
             file: 'src/main/java/com/fis/order/client/VNPayPaymentGatewayClient.java',
@@ -216,8 +235,13 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
     PaymentResp.class
 ); // <--- STOPPED_HERE: java.net.SocketTimeoutException: Read timed out`
           },
+          codeDiff: {
+            filename: 'VNPayPaymentGatewayClient.java',
+            oldCode: 'restTemplate.postForEntity(paymentUrl, request, PaymentResp.class);',
+            newCode: '@CircuitBreaker(name = "vnpay", fallbackMethod = "handlePaymentFallback")\nrestTemplate.postForEntity(paymentUrl, request, PaymentResp.class);'
+          },
           runtimeLogs: [
-            'ERROR [org.springframework.web.client.ResourceAccessException] I/O error on POST request for "https://sandbox.vnpayment.vn/payment": Read timed out',
+            'ERROR [org.springframework.web.client.ResourceAccessException] I/O error on POST request: Read timed out',
             'Caused by: java.net.SocketTimeoutException: Read timed out'
           ]
         },
@@ -242,34 +266,37 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
       ],
       edges: [
         { id: 'e-ord-1', source: 'node-order-entry', target: 'node-order-service', label: 'Call service', animated: true },
-        { id: 'e-ord-2', source: 'node-order-service', target: 'node-payment-client', label: 'Invoke External API', animated: true },
-        { id: 'e-ord-3', source: 'node-payment-client', target: 'node-order-repo', label: 'BLOCKED (TIMEOUT)', animated: false, style: { stroke: '#ef4444', strokeDasharray: '4 4' } },
-        { id: 'e-ord-4', source: 'node-order-repo', target: 'node-order-db', label: 'Never executed', animated: false }
+        { id: 'e-ord-2', source: 'node-order-service', target: 'node-payment-client', label: 'Invoke API', animated: true },
+        { id: 'e-ord-3', source: 'node-payment-client', target: 'node-order-repo', label: 'TIMEOUT (500)', animated: false, style: { stroke: '#ef4444', strokeDasharray: '4 4' } },
+        { id: 'e-ord-4', source: 'node-order-repo', target: 'node-order-db', label: 'Bypassed', animated: false }
       ]
     }
   },
   {
     id: '400_validation',
-    name: '3. [400 Bad Request] Lỗi Validation DTO @NotBlank',
+    name: '3. [400 Bad Request] Bean Validation @NotBlank Field Error',
     method: 'POST',
     endpoint: '/api/v1/categories',
+    statusCode: 400,
     statusText: '400 Bad Request',
-    desc: 'Request gửi body thiếu trường bắt buộc "categoryName", quăng MethodArgumentNotValidException.',
+    desc: 'Dữ liệu request body gửi lên thiếu trường bắt buộc categoryName, bị chặn bởi Hibernate Validator.',
     session: {
       id: 'session-400',
       endpoint: '/api/v1/categories',
       method: 'POST',
+      statusCode: 400,
+      latencyMs: 6,
       status: 'completed',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       certaintyScore: 0.95,
       steps: [
-        { stepNumber: 1, title: 'Nhận cURL / Mã lỗi', status: 'completed', summary: 'POST /api/v1/categories (400 Bad Request)', timestamp: new Date().toISOString() },
-        { stepNumber: 2, title: 'Tạo Session MCP', status: 'completed', summary: 'Khởi tạo session điều tra lỗi 400', timestamp: new Date().toISOString() },
-        { stepNumber: 3, title: 'Quét Pipeline AST', status: 'completed', summary: 'Phát hiện @Valid CategoryDto tại Controller', timestamp: new Date().toISOString() },
-        { stepNumber: 4, title: 'Xác minh Runtime 3 cấp độ', status: 'completed', summary: 'Chạy MockMvc test: status().isBadRequest()', timestamp: new Date().toISOString() },
-        { stepNumber: 5, title: 'Kết luận Nhân - Quả (WHY)', status: 'completed', summary: 'Điểm chết tại Tầng DTO Validation', timestamp: new Date().toISOString() },
-        { stepNumber: 6, title: 'Báo cáo & Hiển thị Canvas', status: 'completed', summary: 'Đồng bộ đồ thị 2D hoàn tất', timestamp: new Date().toISOString() }
+        { stepNumber: 1, title: 'Nhận cURL / Request', status: 'completed', summary: 'POST /api/v1/categories (400)', timestamp: new Date().toISOString() },
+        { stepNumber: 2, title: 'Khởi tạo Session MCP', status: 'completed', summary: 'Tạo session kiểm tra validation', timestamp: new Date().toISOString() },
+        { stepNumber: 3, title: 'Quét Pipeline AST', status: 'completed', summary: 'Phát hiện @Valid CategoryDto', timestamp: new Date().toISOString() },
+        { stepNumber: 4, title: 'Kiểm thử Runtime', status: 'completed', summary: 'MethodArgumentNotValidException', timestamp: new Date().toISOString() },
+        { stepNumber: 5, title: 'Phân tích Nhân - Quả', status: 'completed', summary: 'Thiếu trường bắt buộc categoryName', timestamp: new Date().toISOString() },
+        { stepNumber: 6, title: 'Đồng bộ kết quả', status: 'completed', summary: 'Dừng trước khi bước vào Service', timestamp: new Date().toISOString() }
       ],
       nodes: [
         {
@@ -282,7 +309,8 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           state: 'PASSED',
           certainty: 'EXPLICIT',
           confidence: 0.95,
-          method: 'POST'
+          method: 'POST',
+          latencyMs: 2
         },
         {
           id: 'node-cat-validator',
@@ -294,21 +322,27 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           state: 'STOPPED_HERE',
           certainty: 'EXPLICIT',
           confidence: 1.0,
+          latencyMs: 4,
           causalWhy: {
-            condition: "Trường 'categoryName' là chuỗi ký tự không rỗng theo ràng buộc @NotBlank.",
-            actualState: "Payload gửi lên: {\"description\": \"Danh mục số 1\"}, thiếu hoàn toàn 'categoryName'.",
-            verdict: "400 BAD REQUEST: MethodArgumentNotValidException: Field 'categoryName' rejected value [null]",
-            recommendation: "Bổ sung thuộc tính 'categoryName' vào payload HTTP body của client."
+            condition: "Trường 'categoryName' là bắt buộc không rỗng theo ràng buộc @NotBlank.",
+            actualState: "Payload gửi lên: {\"description\": \"Danh mục 1\"}, thiếu trường 'categoryName'.",
+            verdict: "400 BAD REQUEST: MethodArgumentNotValidException on field 'categoryName'",
+            recommendation: "Bổ sung thuộc tính 'categoryName' vào payload JSON của request."
           },
           codeEvidence: {
             file: 'src/main/java/com/fis/category/dto/CategoryDto.java',
             line: 15,
             language: 'java',
             codeSnippet: `@NotBlank(message = "categoryName cannot be blank")
-private String categoryName; // <--- STOPPED_HERE (Field error: rejected value [null])`
+private String categoryName; // <--- STOPPED_HERE: rejected value [null]`
+          },
+          codeDiff: {
+            filename: 'request.json',
+            oldCode: '{\n  "description": "Danh mục 1"\n}',
+            newCode: '{\n  "categoryName": "Tên danh mục",\n  "description": "Danh mục 1"\n}'
           },
           runtimeLogs: [
-            'WARN [DefaultHandlerExceptionResolver] Resolved [MethodArgumentNotValidException: Validation failed for argument [0] in public ResponseEntity...]',
+            'WARN [DefaultHandlerExceptionResolver] Resolved [MethodArgumentNotValidException: Validation failed for argument [0]]',
             'Field error in object "categoryDto" on field "categoryName": rejected value [null]'
           ]
         },
@@ -332,9 +366,9 @@ private String categoryName; // <--- STOPPED_HERE (Field error: rejected value [
         }
       ],
       edges: [
-        { id: 'e-cat-1', source: 'node-cat-entry', target: 'node-cat-validator', label: 'Validate Payload', animated: true },
+        { id: 'e-cat-1', source: 'node-cat-entry', target: 'node-cat-validator', label: 'Validate DTO', animated: true },
         { id: 'e-cat-2', source: 'node-cat-validator', target: 'node-cat-service', label: 'BLOCKED (400)', animated: false, style: { stroke: '#ef4444', strokeDasharray: '4 4' } },
-        { id: 'e-cat-3', source: 'node-cat-service', target: 'node-cat-db', label: 'Never executed', animated: false }
+        { id: 'e-cat-3', source: 'node-cat-service', target: 'node-cat-db', label: 'Bypassed', animated: false }
       ]
     }
   }
@@ -349,175 +383,159 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
   const [customMethod, setCustomMethod] = useState<string>('POST');
   const [customEndpoint, setCustomEndpoint] = useState<string>('/api/v1/users');
   const [customErrorCode, setCustomErrorCode] = useState<string>('403');
-  const [isSimulating, setIsSimulating] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
   const handleRunPreset = (scenarioId: string) => {
     const sc = PRESET_SCENARIOS.find((s) => s.id === scenarioId);
     if (!sc) return;
-
-    setIsSimulating(true);
-    setTimeout(() => {
-      onRunScenario(sc.session);
-      setIsSimulating(false);
-      onClose();
-    }, 600);
+    onRunScenario(sc.session);
+    onClose();
   };
 
   const handleRunCustom = () => {
-    setIsSimulating(true);
-    setTimeout(() => {
-      const parts = customEndpoint.split('/').filter(Boolean);
-      const domain = parts[parts.length - 1] || 'resource';
-      const cap = domain.charAt(0).toUpperCase() + domain.slice(1);
+    const parts = customEndpoint.split('/').filter(Boolean);
+    const domain = parts[parts.length - 1] || 'resource';
+    const cap = domain.charAt(0).toUpperCase() + domain.slice(1);
 
-      const customSession: InvestigationSession = {
-        id: `custom-${Date.now()}`,
-        endpoint: customEndpoint,
-        method: customMethod,
-        status: 'completed',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        certaintyScore: 0.85,
-        steps: [
-          { stepNumber: 1, title: 'Nhận cURL / Request lỗi', status: 'completed', summary: `${customMethod} ${customEndpoint} (${customErrorCode})`, timestamp: new Date().toISOString() },
-          { stepNumber: 2, title: 'Tạo Session MCP & WebSocket', status: 'completed', summary: 'Mở WebSocket Hub port 9876', timestamp: new Date().toISOString() },
-          { stepNumber: 3, title: 'Quét Pipeline AST tĩnh', status: 'completed', summary: `Phân giải ${cap}Controller -> ${cap}Service`, timestamp: new Date().toISOString() },
-          { stepNumber: 4, title: 'Xác minh Runtime 3 cấp độ', status: 'completed', summary: `Khớp phản hồi mã lỗi ${customErrorCode}`, timestamp: new Date().toISOString() },
-          { stepNumber: 5, title: 'Kết luận Nhân - Quả (WHY)', status: 'completed', summary: `Xác định điểm dừng STOPPED_HERE tại ${cap}Filter`, timestamp: new Date().toISOString() },
-          { stepNumber: 6, title: 'Báo cáo & Đồng bộ Canvas', status: 'completed', summary: 'Hoàn tất đồng bộ đồ thị', timestamp: new Date().toISOString() }
-        ],
-        nodes: [
-          {
-            id: 'c-entry',
-            type: 'entrypoint',
-            label: `${customMethod} ${customEndpoint}`,
-            sublabel: `${cap}Controller.handle()`,
-            file: `src/main/java/com/fis/controller/${cap}Controller.java`,
-            line: 32,
-            state: 'PASSED',
-            certainty: 'EXPLICIT',
-            confidence: 0.95,
-            method: customMethod
+    const customSession: InvestigationSession = {
+      id: `custom-${Date.now()}`,
+      endpoint: customEndpoint,
+      method: customMethod,
+      statusCode: parseInt(customErrorCode, 10),
+      latencyMs: 15,
+      status: 'completed',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      certaintyScore: 0.85,
+      steps: [
+        { stepNumber: 1, title: 'Nhận cURL / Request', status: 'completed', summary: `${customMethod} ${customEndpoint} (${customErrorCode})`, timestamp: new Date().toISOString() },
+        { stepNumber: 2, title: 'Khởi tạo Session MCP', status: 'completed', summary: 'Mở WebSocket Hub port 9876', timestamp: new Date().toISOString() },
+        { stepNumber: 3, title: 'Quét Pipeline AST', status: 'completed', summary: `Phân giải ${cap}Controller -> ${cap}Service`, timestamp: new Date().toISOString() },
+        { stepNumber: 4, title: 'Kiểm thử Runtime', status: 'completed', summary: `Khớp phản hồi mã lỗi ${customErrorCode}`, timestamp: new Date().toISOString() },
+        { stepNumber: 5, title: 'Phân tích Nhân - Quả', status: 'completed', summary: `Dừng tại ${cap}SecurityFilter`, timestamp: new Date().toISOString() },
+        { stepNumber: 6, title: 'Đồng bộ kết quả', status: 'completed', summary: 'Cập nhật sơ đồ hoàn tất', timestamp: new Date().toISOString() }
+      ],
+      nodes: [
+        {
+          id: 'c-entry',
+          type: 'entrypoint',
+          label: `${customMethod} ${customEndpoint}`,
+          sublabel: `${cap}Controller.handle()`,
+          file: `src/main/java/com/fis/controller/${cap}Controller.java`,
+          line: 32,
+          state: 'PASSED',
+          certainty: 'EXPLICIT',
+          confidence: 0.95,
+          method: customMethod,
+          latencyMs: 3
+        },
+        {
+          id: 'c-filter',
+          type: 'filter',
+          label: `${cap}SecurityFilter`,
+          sublabel: `doFilterInternal() - Status check ${customErrorCode}`,
+          file: `src/main/java/com/fis/security/${cap}SecurityFilter.java`,
+          line: 55,
+          state: 'STOPPED_HERE',
+          certainty: 'EXPLICIT',
+          confidence: 0.90,
+          latencyMs: 12,
+          causalWhy: {
+            condition: `Request cần thỏa mãn chính sách bảo mật cho endpoint ${customEndpoint}.`,
+            actualState: `Client gửi thông tin xác thực không hợp lệ dẫn đến mã lỗi ${customErrorCode}.`,
+            verdict: `${customErrorCode} ERROR: Bị chặn tại ${cap}SecurityFilter trước khi vào Service.`,
+            recommendation: `Kiểm tra lại Authorization header hoặc quyền hạn được định nghĩa tại ${cap}SecurityFilter.`
           },
-          {
-            id: 'c-filter',
-            type: 'filter',
-            label: `${cap}SecurityFilter`,
-            sublabel: `doFilterInternal() - Check status code ${customErrorCode}`,
+          codeEvidence: {
             file: `src/main/java/com/fis/security/${cap}SecurityFilter.java`,
             line: 55,
-            state: 'STOPPED_HERE',
-            certainty: 'EXPLICIT',
-            confidence: 0.90,
-            causalWhy: {
-              condition: `Request phải thỏa mãn chính sách bảo mật và tham số hợp lệ cho ${customEndpoint}.`,
-              actualState: `Client gửi dữ liệu vi phạm điều kiện, dẫn đến mã lỗi ${customErrorCode}.`,
-              verdict: `${customErrorCode} ERROR: Request bị chặn tại tầng filter trước khi vào logic nghiệp vụ.`,
-              recommendation: `Kiểm tra lại token xác thực hoặc quyền hạn được cấu hình tại ${cap}SecurityFilter.`
-            },
-            codeEvidence: {
-              file: `src/main/java/com/fis/security/${cap}SecurityFilter.java`,
-              line: 55,
-              language: 'java',
-              codeSnippet: `if (!hasValidCredentials(request)) {\n    response.sendError(HttpServletResponse.SC_${customErrorCode === '403' ? 'FORBIDDEN' : 'BAD_REQUEST'}); // <--- STOPPED_HERE\n    return;\n}`
-            }
-          },
-          {
-            id: 'c-service',
-            type: 'service',
-            label: `${cap}ServiceImpl`,
-            sublabel: 'executeBusinessLogic()',
-            state: 'SKIPPED',
-            certainty: 'INFERRED',
-            confidence: 0.60
-          },
-          {
-            id: 'c-repo',
-            type: 'repository',
-            label: `${cap}Repository`,
-            sublabel: 'saveOrUpdate()',
-            state: 'SKIPPED',
-            certainty: 'INFERRED',
-            confidence: 0.50
+            language: 'java',
+            codeSnippet: `if (!hasValidCredentials(request)) {\n    response.sendError(HttpServletResponse.SC_${customErrorCode === '403' ? 'FORBIDDEN' : 'BAD_REQUEST'}); // <--- STOPPED_HERE\n    return;\n}`
           }
-        ],
-        edges: [
-          { id: 'c-e1', source: 'c-entry', target: 'c-filter', label: 'HTTP Context', animated: true },
-          { id: 'c-e2', source: 'c-filter', target: 'c-service', label: `BLOCKED (${customErrorCode})`, animated: false, style: { stroke: '#ef4444', strokeDasharray: '4 4' } },
-          { id: 'c-e3', source: 'c-service', target: 'c-repo', label: 'Never reached', animated: false }
-        ]
-      };
+        },
+        {
+          id: 'c-service',
+          type: 'service',
+          label: `${cap}ServiceImpl`,
+          sublabel: 'executeBusinessLogic()',
+          state: 'SKIPPED',
+          certainty: 'INFERRED',
+          confidence: 0.60
+        },
+        {
+          id: 'c-repo',
+          type: 'repository',
+          label: `${cap}Repository`,
+          sublabel: 'saveOrUpdate()',
+          state: 'SKIPPED',
+          certainty: 'INFERRED',
+          confidence: 0.50
+        }
+      ],
+      edges: [
+        { id: 'c-e1', source: 'c-entry', target: 'c-filter', label: 'HTTP Context', animated: true },
+        { id: 'c-e2', source: 'c-filter', target: 'c-service', label: `BLOCKED (${customErrorCode})`, animated: false, style: { stroke: '#ef4444', strokeDasharray: '4 4' } },
+        { id: 'c-e3', source: 'c-service', target: 'c-repo', label: 'Bypassed', animated: false }
+      ]
+    };
 
-      onRunScenario(customSession);
-      setIsSimulating(false);
-      onClose();
-    }, 600);
+    onRunScenario(customSession);
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-slate-950 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        {/* Modal Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white tracking-tight">
-                FlowLens Investigation Simulator
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                Thử nghiệm điều tra trực tiếp trên Web mà không cần kết nối Agent
-              </p>
-            </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 font-sans">
+      <div className="w-full max-w-2xl bg-slate-950 border border-slate-800 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal className="w-4 h-4 text-sky-400" />
+            <h3 className="text-sm font-semibold text-slate-100">
+              Kịch Bản Điều Tra Lỗi Mẫu
+            </h3>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-5 space-y-5 overflow-y-auto max-h-[75vh]">
-          {/* Section 1: Presets */}
+        {/* Body */}
+        <div className="p-4 space-y-4 overflow-y-auto max-h-[75vh] text-xs">
+          {/* Preset list */}
           <div>
-            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block mb-2">
-              Chọn Kịch Bản Mô Phỏng Lỗi Sẵn Có (Presets):
-            </label>
+            <div className="text-slate-400 font-medium mb-2 uppercase text-[10px] tracking-wider">
+              Chọn kịch bản lỗi backend thực tế:
+            </div>
 
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {PRESET_SCENARIOS.map((sc) => {
                 const isSelected = selectedScenarioId === sc.id;
                 return (
                   <div
                     key={sc.id}
                     onClick={() => setSelectedScenarioId(sc.id)}
-                    className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                    className={`p-3 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                       isSelected
-                        ? 'border-sky-500 bg-sky-950/20 shadow-[0_0_15px_rgba(56,189,248,0.15)] ring-1 ring-sky-500/50'
-                        : 'border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70'
+                        ? 'border-sky-500/80 bg-slate-900'
+                        : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
                     }`}
                   >
-                    <div className="space-y-1">
+                    <div className="space-y-1 overflow-hidden">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-200">
+                        <span className="font-semibold text-slate-200">
                           {sc.name}
                         </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-sky-400 border border-slate-700">
-                          {sc.statusText}
-                        </span>
                       </div>
-                      <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                      <p className="text-slate-400 text-[11px] leading-relaxed">
                         {sc.desc}
                       </p>
-                      <div className="text-[11px] font-mono text-slate-300">
-                        <code>{sc.method} {sc.endpoint}</code>
+                      <div className="font-mono text-[10px] text-slate-300">
+                        {sc.method} {sc.endpoint}
                       </div>
                     </div>
 
@@ -526,11 +544,10 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
                         e.stopPropagation();
                         handleRunPreset(sc.id);
                       }}
-                      disabled={isSimulating}
-                      className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-all shadow-md active:scale-95"
+                      className="px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-medium flex items-center gap-1 shrink-0 transition-colors shadow-sm"
                     >
                       <Play className="w-3 h-3 fill-current" />
-                      <span>Chạy kịch bản</span>
+                      <span>Xem luồng</span>
                     </button>
                   </div>
                 );
@@ -540,19 +557,18 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
 
           <div className="h-[1px] bg-slate-800" />
 
-          {/* Section 2: Custom API Test */}
+          {/* Custom Endpoint */}
           <div>
-            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block mb-2">
-              Hoặc Nhập Endpoint Tự Định Nghĩa:
-            </label>
+            <div className="text-slate-400 font-medium mb-2 uppercase text-[10px] tracking-wider">
+              Hoặc nhập endpoint kiểm thử:
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 font-mono text-xs">
               <div>
-                <span className="text-[10px] text-slate-400 block mb-1">Method:</span>
                 <select
                   value={customMethod}
                   onChange={(e) => setCustomMethod(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-sky-500 focus:outline-none"
+                  className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-slate-200"
                 >
                   <option value="GET">GET</option>
                   <option value="POST">POST</option>
@@ -562,22 +578,20 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
               </div>
 
               <div className="sm:col-span-2">
-                <span className="text-[10px] text-slate-400 block mb-1">API Endpoint Path:</span>
                 <input
                   type="text"
                   value={customEndpoint}
                   onChange={(e) => setCustomEndpoint(e.target.value)}
                   placeholder="/api/v1/orders"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-sky-500 focus:outline-none"
+                  className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-slate-200"
                 />
               </div>
 
               <div>
-                <span className="text-[10px] text-slate-400 block mb-1">Mã Lỗi:</span>
                 <select
                   value={customErrorCode}
                   onChange={(e) => setCustomErrorCode(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-sky-500 focus:outline-none"
+                  className="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-slate-200"
                 >
                   <option value="400">400 Bad Request</option>
                   <option value="401">401 Unauthorized</option>
@@ -588,28 +602,16 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
               </div>
             </div>
 
-            <div className="mt-3 flex justify-end">
+            <div className="mt-2.5 flex justify-end">
               <button
                 onClick={handleRunCustom}
-                disabled={isSimulating}
-                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-2 transition-all shadow-md active:scale-95"
+                className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium flex items-center gap-1.5 transition-colors"
               >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Mô phỏng điều tra Endpoint này</span>
+                <span>Mô phỏng endpoint này</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
-        </div>
-
-        {/* Modal Footer */}
-        <div className="p-3 bg-slate-900/60 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>* Dữ liệu mô phỏng sẽ được vẽ trực tiếp thành đồ thị 2D với Causal WHY Card trên Canvas.</span>
-          <button
-            onClick={onClose}
-            className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
-          >
-            Đóng
-          </button>
         </div>
       </div>
     </div>
