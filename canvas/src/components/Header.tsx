@@ -6,9 +6,12 @@ import {
   Rows3,
   RotateCcw,
   SlidersHorizontal,
-  Timer
+  Timer,
+  Workflow,
+  CheckSquare
 } from 'lucide-react';
 import type { InvestigationSession } from '../types.js';
+import { calculateExecutionDepth, calculateInvestigationProgress } from '../types.js';
 
 interface HeaderProps {
   session: InvestigationSession;
@@ -29,10 +32,16 @@ export const Header: React.FC<HeaderProps> = ({
   onResetDemo,
   onOpenSimulator
 }) => {
-  const passedCount = (session.nodes || []).filter((n) => n.state === 'PASSED').length;
+  // Tính toán các chỉ số % thực tế từ cấu trúc dữ liệu phiên
+  const depthStats = calculateExecutionDepth(session.nodes || []);
+  const stepProgressPercent = calculateInvestigationProgress(session.steps || []);
+
+  const totalConfidence = (session.nodes || []).reduce((acc, n) => acc + (n.confidence ?? 0), 0);
+  const realCertaintyPercent = session.nodes && session.nodes.length > 0
+    ? Math.round((totalConfidence / session.nodes.length) * 100)
+    : Math.round((session.certaintyScore || 0) * 100);
+
   const stoppedCount = (session.nodes || []).filter((n) => n.state === 'STOPPED_HERE').length;
-  const skippedCount = (session.nodes || []).filter((n) => n.state === 'SKIPPED').length;
-  const totalCount = (session.nodes || []).length;
 
   return (
     <header className="w-full bg-slate-950 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between gap-3 z-20 font-sans">
@@ -76,31 +85,67 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Execution Telemetry (Middle) */}
-      <div className="hidden lg:flex items-center gap-3 text-xs font-mono text-slate-400 bg-slate-900/60 px-3 py-1 rounded border border-slate-800">
+      {/* Real Percentage Telemetry Metrics (Middle) */}
+      <div className="hidden lg:flex items-center gap-3.5 text-xs font-mono text-slate-400 bg-slate-900/80 px-3.5 py-1.5 rounded-lg border border-slate-800">
+        {/* Metric 1: Real Investigation Steps Progress % */}
+        <div className="flex items-center gap-1.5" title="Tiến độ hoàn thành 6 bước điều tra chuẩn">
+          <CheckSquare className="w-3.5 h-3.5 text-sky-400" />
+          <span>Steps:</span>
+          <span className="text-slate-200 font-semibold">{stepProgressPercent}%</span>
+          <div className="w-10 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div
+              className="bg-sky-400 h-full rounded-full transition-all duration-300"
+              style={{ width: `${stepProgressPercent}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="h-3.5 w-[1px] bg-slate-800" />
+
+        {/* Metric 2: Real Execution Depth % */}
+        <div
+          className="flex items-center gap-1.5"
+          title={`Độ sâu thực thi luồng: ${depthStats.executedLayers}/${depthStats.totalLayers} tầng (${depthStats.depthPercent}%). Tầng bị bỏ qua: ${depthStats.bypassedPercent}%.`}
+        >
+          <Workflow className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Depth:</span>
+          <span className="text-slate-200 font-semibold">{depthStats.depthPercent}%</span>
+          <span className="text-[10px] text-slate-500">
+            ({depthStats.executedLayers}/{depthStats.totalLayers} layers)
+          </span>
+          <div className="w-12 bg-slate-800 rounded-full h-1.5 overflow-hidden flex">
+            <div
+              className={`h-full transition-all duration-300 ${
+                stoppedCount > 0 ? 'bg-rose-500' : 'bg-emerald-400'
+              }`}
+              style={{ width: `${depthStats.depthPercent}%` }}
+            />
+            <div
+              className="bg-slate-700/60 h-full transition-all duration-300"
+              style={{ width: `${depthStats.bypassedPercent}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="h-3.5 w-[1px] bg-slate-800" />
+
+        {/* Metric 3: Real Evidence Certainty Score % */}
+        <div className="flex items-center gap-1.5" title="Điểm tin cậy toán học trung bình của toàn bộ node có bằng chứng">
+          <span>Certainty:</span>
+          <strong className="text-emerald-400">{realCertaintyPercent}%</strong>
+          <span className="text-[10px] text-slate-500">
+            ({realCertaintyPercent >= 70 ? 'EXPLICIT' : 'INFERRED'})
+          </span>
+        </div>
+
+        <div className="h-3.5 w-[1px] bg-slate-800" />
+
+        {/* Metric 4: Latency */}
         <div className="flex items-center gap-1">
           <Timer className="w-3.5 h-3.5 text-slate-400" />
-          <span>Latency:</span>
-          <strong className="text-slate-200">
+          <span className="text-slate-300 font-medium">
             {session.latencyMs ? `${session.latencyMs}ms` : '12ms'}
-          </strong>
-        </div>
-
-        <div className="h-3.5 w-[1px] bg-slate-800" />
-
-        <div className="flex items-center gap-1.5">
-          <span>Layers:</span>
-          <span className="text-emerald-400 font-semibold">{passedCount} passed</span>
-          {stoppedCount > 0 && <span className="text-rose-400 font-semibold">• {stoppedCount} stopped</span>}
-          {skippedCount > 0 && <span className="text-slate-500">• {skippedCount} skipped</span>}
-          <span className="text-slate-600">({totalCount} total)</span>
-        </div>
-
-        <div className="h-3.5 w-[1px] bg-slate-800" />
-
-        <div>
-          <span>Certainty:</span>{' '}
-          <strong className="text-sky-400">{(session.certaintyScore * 100).toFixed(0)}%</strong>
+          </span>
         </div>
       </div>
 

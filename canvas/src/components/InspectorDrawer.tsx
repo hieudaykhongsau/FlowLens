@@ -8,9 +8,12 @@ import {
   GitCompare,
   Copy,
   Check,
-  Code2
+  Code2,
+  CheckCircle2,
+  MinusCircle
 } from 'lucide-react';
 import type { FlowNodeData } from '../types.js';
+import { calculateRealConfidence } from '../types.js';
 
 interface InspectorDrawerProps {
   node: FlowNodeData | null;
@@ -26,19 +29,21 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
 
   const {
     label,
-    sublabel,
     type,
     file,
     line,
     state,
-    certainty,
-    confidence,
+    evidence,
     latencyMs,
     causalWhy,
     codeEvidence,
     codeDiff,
     runtimeLogs
   } = node;
+
+  const calculated = calculateRealConfidence(evidence);
+  const confidenceScore = node.confidence !== undefined ? node.confidence : calculated.score;
+  const certaintyLevel = node.certainty || calculated.certainty;
 
   const handleCopyPatch = () => {
     if (!codeDiff) return;
@@ -56,7 +61,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
   };
 
   return (
-    <aside className="fixed top-14 bottom-0 right-0 w-[450px] max-w-[95vw] bg-slate-950/98 border-l border-slate-800 shadow-2xl z-30 flex flex-col overflow-hidden font-sans">
+    <aside className="fixed top-14 bottom-0 right-0 w-[460px] max-w-[95vw] bg-slate-950/98 border-l border-slate-800 shadow-2xl z-30 flex flex-col overflow-hidden font-sans">
       {/* Header */}
       <div className="p-3.5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/80">
         <div className="flex items-center gap-2 overflow-hidden">
@@ -137,7 +142,7 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
               ● {state}
             </span>
             <span className="text-slate-300">
-              Certainty: <strong className="text-sky-400">{(confidence * 100).toFixed(0)}%</strong> ({certainty})
+              Confidence: <strong className="text-sky-400">{Math.round(confidenceScore * 100)}%</strong> ({certaintyLevel})
             </span>
           </div>
 
@@ -191,39 +196,107 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="p-3 bg-slate-900 rounded border border-slate-800 text-slate-400 text-xs font-sans">
-                {sublabel || 'Node thực thi bình thường theo luồng kiểm thử.'}
-              </div>
-            )}
+            ) : null}
 
-            {/* Evidence Breakdown */}
-            <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 space-y-2">
+            {/* REAL Deterministic Evidence Breakdown */}
+            <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between text-slate-300 text-xs font-semibold">
                 <span className="flex items-center gap-1.5">
                   <Scale className="w-3.5 h-3.5 text-sky-400" />
-                  Deterministic Evidence Weights
+                  Deterministic Evidence Calculation
                 </span>
-                <span className="text-sky-400 font-mono font-bold">
-                  {confidence.toFixed(2)} / 1.00
+                <span className="text-emerald-400 font-mono font-bold">
+                  {Math.round(confidenceScore * 100)}% ({certaintyLevel})
                 </span>
               </div>
 
-              <div className="space-y-1 text-[11px] text-slate-400 pt-1">
-                <div className="flex items-center justify-between py-1 border-b border-slate-800">
-                  <span>+0.4 Route / Endpoint mapping:</span>
-                  <span className="text-emerald-400 font-semibold">VERIFIED</span>
-                </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-800">
-                  <span>+0.3 Call graph / Injected symbol:</span>
-                  <span className="text-emerald-400 font-semibold">MATCHED</span>
-                </div>
-                <div className="flex items-center justify-between py-1">
-                  <span>+0.3 Runtime trace / Exit assertion:</span>
-                  <span className={state === 'STOPPED_HERE' ? 'text-rose-400 font-semibold' : 'text-slate-500'}>
-                    {state === 'STOPPED_HERE' ? 'CAPTURED EXCEPTION' : 'N/A'}
+              <div className="text-[10px] text-slate-400 font-mono bg-slate-950 p-2 rounded border border-slate-800">
+                Formula: <span className="text-sky-300">Confidence = min(1.0, max(0, ∑ wi))</span>
+              </div>
+
+              <div className="space-y-1.5 text-[11px] text-slate-300 pt-0.5">
+                {/* 1. Route annotation */}
+                <div className="flex items-start justify-between py-1 border-b border-slate-800/80 gap-2">
+                  <div>
+                    <div className="flex items-center gap-1 text-slate-200">
+                      {evidence?.hasRouteAnnotation ? (
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                      ) : (
+                        <MinusCircle className="w-3 h-3 text-slate-500 shrink-0" />
+                      )}
+                      <span>Route / Endpoint Annotation (w₁ = +0.40):</span>
+                    </div>
+                    {evidence?.routeAnnotationRule && (
+                      <span className="text-[10px] text-slate-400 block pl-4">
+                        {evidence.routeAnnotationRule}
+                      </span>
+                    )}
+                  </div>
+                  <span className={`font-semibold font-mono ${evidence?.hasRouteAnnotation ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {evidence?.hasRouteAnnotation ? '+40%' : '0%'}
                   </span>
                 </div>
+
+                {/* 2. Symbol call */}
+                <div className="flex items-start justify-between py-1 border-b border-slate-800/80 gap-2">
+                  <div>
+                    <div className="flex items-center gap-1 text-slate-200">
+                      {evidence?.hasSymbolCall ? (
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                      ) : (
+                        <MinusCircle className="w-3 h-3 text-slate-500 shrink-0" />
+                      )}
+                      <span>AST & Symbol Call Graph (w₂ = +0.30):</span>
+                    </div>
+                    {evidence?.symbolCallRule && (
+                      <span className="text-[10px] text-slate-400 block pl-4">
+                        {evidence.symbolCallRule}
+                      </span>
+                    )}
+                  </div>
+                  <span className={`font-semibold font-mono ${evidence?.hasSymbolCall ? 'text-emerald-400' : 'text-slate-500'}`}>
+                    {evidence?.hasSymbolCall ? '+30%' : '0%'}
+                  </span>
+                </div>
+
+                {/* 3. Runtime trace */}
+                <div className="flex items-start justify-between py-1 border-b border-slate-800/80 gap-2">
+                  <div>
+                    <div className="flex items-center gap-1 text-slate-200">
+                      {evidence?.hasRuntimeTrace ? (
+                        <CheckCircle2 className="w-3 h-3 text-rose-400 shrink-0" />
+                      ) : (
+                        <MinusCircle className="w-3 h-3 text-slate-500 shrink-0" />
+                      )}
+                      <span>Runtime Frame / Stack Trace (w₃ = +0.30):</span>
+                    </div>
+                    {evidence?.runtimeTraceRule && (
+                      <span className="text-[10px] text-slate-400 block pl-4">
+                        {evidence.runtimeTraceRule}
+                      </span>
+                    )}
+                  </div>
+                  <span className={`font-semibold font-mono ${evidence?.hasRuntimeTrace ? 'text-rose-400' : 'text-slate-500'}`}>
+                    {evidence?.hasRuntimeTrace ? '+30%' : '0%'}
+                  </span>
+                </div>
+
+                {/* 4. Ambiguity penalty */}
+                {evidence?.hasAmbiguousOverload && (
+                  <div className="flex items-start justify-between py-1 border-b border-slate-800/80 gap-2">
+                    <div>
+                      <span className="text-amber-400 font-semibold block">
+                        Ambiguous Overload Penalty (w₄ = -0.20):
+                      </span>
+                      {evidence.ambiguityRule && (
+                        <span className="text-[10px] text-slate-400 block">
+                          {evidence.ambiguityRule}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-semibold text-amber-400 font-mono">-20%</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -232,7 +305,6 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
         {/* TAB 2: Code Evidence & Git Patch Diff */}
         {activeTab === 'code_diff' && (
           <div className="space-y-3">
-            {/* Git Diff Block */}
             {codeDiff ? (
               <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
                 <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-300">
@@ -274,7 +346,6 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
               </div>
             ) : null}
 
-            {/* Original Source Snippet */}
             {codeEvidence && (
               <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
                 <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-slate-300">

@@ -16,7 +16,7 @@ import { StepperTracker } from './components/StepperTracker.js';
 import { InspectorDrawer } from './components/InspectorDrawer.js';
 import { InvestigationModal, PRESET_SCENARIOS } from './components/InvestigationModal.js';
 import { getLayoutedElements } from './utils/layout.js';
-import type { FlowNodeData, InvestigationSession } from './types.js';
+import type { FlowNodeData, InvestigationSession, InvestigationStep } from './types.js';
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<InvestigationSession>(PRESET_SCENARIOS[0].session);
@@ -67,7 +67,7 @@ export const App: React.FC = () => {
       setNodes(layouted.nodes);
       setEdges(layouted.edges);
 
-      // Auto-open stopped here node
+      // Auto-open stopped here node if none selected or if it's the root cause
       const stoppedNode = currentSession.nodes.find((n) => n.state === 'STOPPED_HERE');
       if (stoppedNode) {
         setSelectedNode(stoppedNode);
@@ -140,19 +140,76 @@ export const App: React.FC = () => {
     syncGraph(defaultSession, layoutDirection);
   };
 
-  const handleRunScenario = (newSession: InvestigationSession) => {
-    setSession(newSession);
-    syncGraph(newSession, layoutDirection);
+  /**
+   * Chạy kịch bản từng bước với tiến độ % tăng dần thực tế
+   */
+  const handleRunScenario = (targetSession: InvestigationSession) => {
+    // Bước 1: Khởi tạo tất cả node ở trạng thái NOT_VERIFIED, Step 1-3
+    const initialSteps: InvestigationStep[] = targetSession.steps.map((s, idx) => ({
+      ...s,
+      status: idx < 3 ? 'completed' : idx === 3 ? 'in_progress' : 'pending'
+    }));
 
-    // Broadcast through WebSocket if open
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'SIMULATE_SCENARIO',
-          data: newSession
-        })
-      );
-    }
+    const initialNodes = targetSession.nodes.map((n) => ({
+      ...n,
+      state: 'NOT_VERIFIED' as const,
+      confidence: n.evidence?.hasRouteAnnotation ? 0.4 : 0.3
+    }));
+
+    const stage1Session: InvestigationSession = {
+      ...targetSession,
+      status: 'running',
+      steps: initialSteps,
+      nodes: initialNodes,
+      certaintyScore: 0.35
+    };
+
+    setSession(stage1Session);
+    syncGraph(stage1Session, layoutDirection);
+
+    // Bước 2 (Sau 500ms): Xác minh Runtime - Kích hoạt các node PASSED
+    setTimeout(() => {
+      const stage2Steps: InvestigationStep[] = targetSession.steps.map((s, idx) => ({
+        ...s,
+        status: idx < 4 ? 'completed' : idx === 4 ? 'in_progress' : 'pending'
+      }));
+
+      const stage2Nodes = targetSession.nodes.map((n) => {
+        if (n.state === 'PASSED') {
+          return { ...n };
+        }
+        return {
+          ...n,
+          state: 'NOT_VERIFIED' as const
+        };
+      });
+
+      const stage2Session: InvestigationSession = {
+        ...targetSession,
+        status: 'running',
+        steps: stage2Steps,
+        nodes: stage2Nodes,
+        certaintyScore: 0.65
+      };
+
+      setSession(stage2Session);
+      syncGraph(stage2Session, layoutDirection);
+    }, 450);
+
+    // Bước 3 (Sau 950ms): Phát hiện STOPPED_HERE, các node sau thành SKIPPED, hoàn tất 100%
+    setTimeout(() => {
+      setSession(targetSession);
+      syncGraph(targetSession, layoutDirection);
+
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'SIMULATE_SCENARIO',
+            data: targetSession
+          })
+        );
+      }
+    }, 950);
   };
 
   return (

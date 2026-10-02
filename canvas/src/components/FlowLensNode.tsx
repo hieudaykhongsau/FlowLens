@@ -16,6 +16,7 @@ import {
   Timer
 } from 'lucide-react';
 import type { FlowNodeData } from '../types.js';
+import { calculateRealConfidence } from '../types.js';
 
 interface FlowLensNodeProps {
   data: FlowNodeData;
@@ -35,12 +36,16 @@ export const FlowLensNode: React.FC<FlowLensNodeProps> = ({
     file,
     line,
     state,
-    certainty,
-    confidence,
+    evidence,
     method,
     latencyMs,
     onSelectNode
   } = data;
+
+  // Tính điểm tin cậy toán học thực tế từ bằng chứng
+  const calculated = calculateRealConfidence(evidence);
+  const realScore = data.confidence !== undefined ? data.confidence : calculated.score;
+  const realCertainty = data.certainty || calculated.certainty;
 
   const getTypeMeta = () => {
     switch (type) {
@@ -145,8 +150,19 @@ export const FlowLensNode: React.FC<FlowLensNodeProps> = ({
     }
   };
 
+  const getEvidenceFormula = () => {
+    if (!evidence) return null;
+    const parts = [];
+    if (evidence.hasRouteAnnotation) parts.push('+40% Route');
+    if (evidence.hasSymbolCall) parts.push('+30% AST');
+    if (evidence.hasRuntimeTrace) parts.push('+30% Trace');
+    if (evidence.hasAmbiguousOverload) parts.push('-20% Overload');
+    return parts.join(' ');
+  };
+
   const typeMeta = getTypeMeta();
   const stateStyle = getStateStyle();
+  const formulaText = getEvidenceFormula();
 
   return (
     <div
@@ -213,30 +229,44 @@ export const FlowLensNode: React.FC<FlowLensNodeProps> = ({
           </div>
         )}
 
-        {/* Footer: Evidence & Certainty Score */}
+        {/* Footer: Evidence Formula & Certainty Score % */}
         <div className="flex items-center justify-between pt-1.5 border-t border-slate-800 text-[10px] text-slate-400 font-mono">
-          <div className="flex items-center gap-1">
-            <span className="text-slate-400">Certainty:</span>
+          <div className="flex items-center gap-1 truncate max-w-[200px]" title={formulaText || 'Certainty Score'}>
+            <span className="text-slate-400">Score:</span>
             <span
               className={`font-semibold ${
-                certainty === 'EXPLICIT'
+                realCertainty === 'EXPLICIT'
                   ? 'text-emerald-400'
-                  : certainty === 'INFERRED'
+                  : realCertainty === 'INFERRED'
                   ? 'text-amber-400'
                   : 'text-slate-500'
               }`}
             >
-              {certainty}
+              {realCertainty}
             </span>
+            {formulaText && (
+              <span className="text-[9px] text-slate-500 truncate hidden sm:inline">
+                ({formulaText})
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-10 bg-slate-800 rounded-full h-1 overflow-hidden">
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="w-12 bg-slate-800 rounded-full h-1.5 overflow-hidden">
               <div
-                className="bg-sky-400 h-full rounded-full"
-                style={{ width: `${Math.round(confidence * 100)}%` }}
+                className={`h-full rounded-full transition-all duration-300 ${
+                  realScore >= 0.7
+                    ? 'bg-emerald-400'
+                    : realScore > 0.3
+                    ? 'bg-sky-400'
+                    : 'bg-slate-500'
+                }`}
+                style={{ width: `${Math.round(realScore * 100)}%` }}
               />
             </div>
-            <span>{(confidence * 100).toFixed(0)}%</span>
+            <span className="font-semibold text-slate-200">
+              {Math.round(realScore * 100)}%
+            </span>
           </div>
         </div>
       </div>

@@ -40,7 +40,7 @@ export const PRESET_SCENARIOS: {
       status: 'completed',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      certaintyScore: 0.88,
+      certaintyScore: 0.85,
       steps: [
         { stepNumber: 1, title: 'Nhận cURL / Request', status: 'completed', summary: 'POST /api/v1/regulations/approve (403)', timestamp: new Date().toISOString() },
         { stepNumber: 2, title: 'Khởi tạo Session MCP', status: 'completed', summary: 'Gán session ID & kết nối WebSocket 9876', timestamp: new Date().toISOString() },
@@ -59,7 +59,15 @@ export const PRESET_SCENARIOS: {
           line: 42,
           state: 'PASSED',
           certainty: 'EXPLICIT',
-          confidence: 0.95,
+          confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: '@PostMapping("/approve") khớp endpoint HTTP',
+            hasSymbolCall: true,
+            symbolCallRule: 'Khớp hàm approveRegulation(ApproveDto) trong Controller',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'HTTP 200 frame đón nhận request thành công'
+          },
           method: 'POST',
           latencyMs: 2,
           runtimeLogs: ['HTTP POST received from client', 'Authorization: Bearer eyJhbGci...']
@@ -73,7 +81,15 @@ export const PRESET_SCENARIOS: {
           line: 88,
           state: 'PASSED',
           certainty: 'EXPLICIT',
-          confidence: 0.90,
+          confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: 'SecurityFilterChain đăng ký JwtAuthenticationFilter',
+            hasSymbolCall: true,
+            symbolCallRule: 'doFilterInternal(request, response, chain) gọi qua Bean filter',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'Log SecurityContextHolder populated: user_8392'
+          },
           latencyMs: 4,
           runtimeLogs: ['Token verified. Claims: sub=user_8392, authorities=[ROLE_OPERATOR]']
         },
@@ -87,6 +103,14 @@ export const PRESET_SCENARIOS: {
           state: 'STOPPED_HERE',
           certainty: 'EXPLICIT',
           confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: '@PreAuthorize("hasRole(\'ADMIN\')") gắn trực tiếp tại method',
+            hasSymbolCall: true,
+            symbolCallRule: 'MethodSecurityInterceptor bắt quyền trước khi invoke method',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'Bắt được AccessDeniedException tại RegulationTypeController.java:41'
+          },
           latencyMs: 8,
           causalWhy: {
             condition: "Tài khoản cần có quyền 'ROLE_ADMIN' để thực hiện thao tác phê duyệt quy định.",
@@ -123,7 +147,14 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           line: 120,
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.70,
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: 'Injected interface RegulationTypeService -> Impl tìm thấy qua AST',
+            hasRuntimeTrace: false,
+            runtimeTraceRule: 'Request bị chặn trước khi bước vào Service (0% runtime)'
+          },
           runtimeLogs: ['[SKIPPED] Luồng thực thi bị chặn trước khi bước vào Service']
         },
         {
@@ -135,7 +166,14 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           line: 35,
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.65
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: 'Autowired repository trong RegulationTypeServiceImpl',
+            hasRuntimeTrace: false,
+            runtimeTraceRule: 'Chưa từng được kích hoạt do Service bị skip'
+          }
         },
         {
           id: 'node-db',
@@ -144,7 +182,14 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           sublabel: 'TABLE regulation_type (COMMIT)',
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.50
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: 'Datasource JPA Hibernate transaction mapping',
+            hasRuntimeTrace: false,
+            runtimeTraceRule: '0 transactions initiated'
+          }
         }
       ],
       edges: [
@@ -173,7 +218,7 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
       status: 'completed',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      certaintyScore: 0.92,
+      certaintyScore: 0.86,
       steps: [
         { stepNumber: 1, title: 'Nhận cURL / Request', status: 'completed', summary: 'POST /api/v1/orders/checkout (500)', timestamp: new Date().toISOString() },
         { stepNumber: 2, title: 'Khởi tạo Session MCP', status: 'completed', summary: 'Gán session ID cho lỗi timeout', timestamp: new Date().toISOString() },
@@ -192,7 +237,15 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           line: 28,
           state: 'PASSED',
           certainty: 'EXPLICIT',
-          confidence: 0.95,
+          confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: '@PostMapping("/checkout") tìm thấy tại OrderCheckoutController',
+            hasSymbolCall: true,
+            symbolCallRule: 'Gọi processCheckout(CheckoutDto)',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'HTTP 200 frame khởi tạo request'
+          },
           method: 'POST',
           latencyMs: 3
         },
@@ -205,7 +258,14 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           line: 65,
           state: 'PASSED',
           certainty: 'EXPLICIT',
-          confidence: 0.90,
+          confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: 'AST định vị @Service OrderCheckoutServiceImpl',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'Log bước vào hàm createOrderAndCharge() lúc 13:20:01'
+          },
           latencyMs: 18
         },
         {
@@ -218,6 +278,14 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           state: 'STOPPED_HERE',
           certainty: 'EXPLICIT',
           confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: 'Client bean RestTemplate trỏ tới URL VNPay Sandbox',
+            hasSymbolCall: true,
+            symbolCallRule: 'RestTemplate.postForEntity(...)',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'java.net.SocketTimeoutException tại VNPayPaymentGatewayClient.java:94'
+          },
           latencyMs: 5003,
           causalWhy: {
             condition: "Cổng thanh toán ngoại vi phải phản hồi trong giới hạn connectTimeout = 5000ms.",
@@ -252,7 +320,14 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           sublabel: 'markOrderAsPaid()',
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.60
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: 'Autowired OrderRepository',
+            hasRuntimeTrace: false,
+            runtimeTraceRule: 'Chưa từng được gọi do ngoại lệ xảy ra ở Client phía trước'
+          }
         },
         {
           id: 'node-order-db',
@@ -261,7 +336,14 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           sublabel: 'UPDATE orders SET status = "PAID"',
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.50
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: 'Database commit table orders',
+            hasRuntimeTrace: false,
+            runtimeTraceRule: 'Giao dịch rollback tự động (0 commit)'
+          }
         }
       ],
       edges: [
@@ -289,7 +371,7 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
       status: 'completed',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      certaintyScore: 0.95,
+      certaintyScore: 0.90,
       steps: [
         { stepNumber: 1, title: 'Nhận cURL / Request', status: 'completed', summary: 'POST /api/v1/categories (400)', timestamp: new Date().toISOString() },
         { stepNumber: 2, title: 'Khởi tạo Session MCP', status: 'completed', summary: 'Tạo session kiểm tra validation', timestamp: new Date().toISOString() },
@@ -308,7 +390,15 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           line: 30,
           state: 'PASSED',
           certainty: 'EXPLICIT',
-          confidence: 0.95,
+          confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: '@PostMapping("/categories") định vị tại Controller',
+            hasSymbolCall: true,
+            symbolCallRule: 'createCategory(@Valid CategoryDto dto)',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'Controller nhận payload JSON thành công'
+          },
           method: 'POST',
           latencyMs: 2
         },
@@ -322,6 +412,14 @@ public ResponseEntity<ApiResponse> approveRegulation(@RequestBody ApproveDto dto
           state: 'STOPPED_HERE',
           certainty: 'EXPLICIT',
           confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: '@Valid annotation gắn tại tham số request body',
+            hasSymbolCall: true,
+            symbolCallRule: 'Hibernate Validator quét @NotBlank trên field categoryName',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'MethodArgumentNotValidException: Field error on categoryName'
+          },
           latencyMs: 4,
           causalWhy: {
             condition: "Trường 'categoryName' là bắt buộc không rỗng theo ràng buộc @NotBlank.",
@@ -353,7 +451,14 @@ private String categoryName; // <--- STOPPED_HERE: rejected value [null]`
           sublabel: 'createCategory()',
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.60
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: 'CategoryService bean mapping',
+            hasRuntimeTrace: false,
+            runtimeTraceRule: 'Chưa từng bước vào Service do bị chặn ở DTO Validator'
+          }
         },
         {
           id: 'node-cat-db',
@@ -362,7 +467,14 @@ private String categoryName; // <--- STOPPED_HERE: rejected value [null]`
           sublabel: 'INSERT INTO categories',
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.50
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: 'JPA entity Category',
+            hasRuntimeTrace: false,
+            runtimeTraceRule: '0 SQL insert statements generated'
+          }
         }
       ],
       edges: [
@@ -426,7 +538,15 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
           line: 32,
           state: 'PASSED',
           certainty: 'EXPLICIT',
-          confidence: 0.95,
+          confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: `Khớp mapping ${customMethod} ${customEndpoint}`,
+            hasSymbolCall: true,
+            symbolCallRule: `${cap}Controller.handle()`,
+            hasRuntimeTrace: true,
+            runtimeTraceRule: 'Đón nhận request thành công'
+          },
           method: customMethod,
           latencyMs: 3
         },
@@ -439,7 +559,15 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
           line: 55,
           state: 'STOPPED_HERE',
           certainty: 'EXPLICIT',
-          confidence: 0.90,
+          confidence: 1.0,
+          evidence: {
+            hasRouteAnnotation: true,
+            routeAnnotationRule: 'Registered filter in chain',
+            hasSymbolCall: true,
+            symbolCallRule: 'Filter chain interception',
+            hasRuntimeTrace: true,
+            runtimeTraceRule: `Exception / rejection with HTTP ${customErrorCode}`
+          },
           latencyMs: 12,
           causalWhy: {
             condition: `Request cần thỏa mãn chính sách bảo mật cho endpoint ${customEndpoint}.`,
@@ -461,7 +589,14 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
           sublabel: 'executeBusinessLogic()',
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.60
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: `Service bean ${cap}Service`,
+            hasRuntimeTrace: false,
+            runtimeTraceRule: 'Bypassed'
+          }
         },
         {
           id: 'c-repo',
@@ -470,7 +605,14 @@ export const InvestigationModal: React.FC<InvestigationModalProps> = ({
           sublabel: 'saveOrUpdate()',
           state: 'SKIPPED',
           certainty: 'INFERRED',
-          confidence: 0.50
+          confidence: 0.30,
+          evidence: {
+            hasRouteAnnotation: false,
+            hasSymbolCall: true,
+            symbolCallRule: `Repository ${cap}Repository`,
+            hasRuntimeTrace: false,
+            runtimeTraceRule: 'Bypassed'
+          }
         }
       ],
       edges: [
