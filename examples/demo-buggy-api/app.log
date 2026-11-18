@@ -1,0 +1,4 @@
+2026-11-18T05:00:00Z INFO Starting demo-buggy-api on port 3000
+2026-11-18T05:00:01Z WARN Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEifQ.sig123456
+2026-11-18T05:00:02Z ERROR ForbiddenError: requires ROLE_ADMIN
+    at registerOrderRoutes (examples/demo-buggy-api/ordersController.ts:8:19)

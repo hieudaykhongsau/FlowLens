@@ -3,5 +3,6 @@ canvas/node_modules/
 dist/
 canvas/dist/
 *.log
+!examples/demo-buggy-api/app.log
 .DS_Store
 Thumbs.db
