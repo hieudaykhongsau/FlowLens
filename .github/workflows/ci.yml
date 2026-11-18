@@ -19,10 +19,10 @@ jobs:
           cache: 'npm'
 
       - name: Install root dependencies
-        run: npm ci
+        run: npm install
 
       - name: Install canvas dependencies
-        run: npm ci --prefix canvas
+        run: npm install --prefix canvas
 
       - name: Build MCP server & Canvas
         run: npm run build
