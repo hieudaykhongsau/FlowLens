@@ -2,6 +2,13 @@ export type ExecutionState = 'NOT_VERIFIED' | 'PASSED' | 'STOPPED_HERE' | 'SKIPP
 
 export type CertaintyLevel = 'EXPLICIT' | 'INFERRED' | 'UNKNOWN';
 
+export type EvidenceSource =
+  | 'static_analysis'
+  | 'test_runner'
+  | 'stack_trace'
+  | 'runtime_log'
+  | 'agent_inference';
+
 export type NodeType = 
   | 'entrypoint' 
   | 'filter' 
@@ -46,8 +53,11 @@ export interface FlowNode {
   line?: number;
   state: ExecutionState;
   certainty: CertaintyLevel;
-  confidence: number; // 0.0 to 1.0
+  confidence: number; // 0.0 to 1.0 (heuristic score)
+  isHeuristicConfidence?: boolean;
   evidence?: NodeEvidence;
+  evidenceSources?: EvidenceSource[];
+  unverifiedReasons?: string[];
   method?: string;
   causalWhy?: CausalWhy;
   codeEvidence?: CodeEvidence;

@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { ConfidenceEngine, ConfidenceEvidence } from '../engine/confidenceEngine.js';
 import { FlowEdge, FlowNode } from '../types.js';
 
 export interface DiscoveredPipeline {
@@ -248,6 +249,31 @@ export class DiResolver {
     }
   }
 
+  private static createStaticNode(
+    base: Omit<FlowNode, 'certainty' | 'confidence' | 'isHeuristicConfidence' | 'evidenceSources' | 'unverifiedReasons'>,
+    evidenceInput: ConfidenceEvidence,
+    extraUnverified?: string[]
+  ): FlowNode {
+    const assessed = ConfidenceEngine.calculateConfidence(evidenceInput);
+    return {
+      ...base,
+      certainty: assessed.certainty,
+      confidence: assessed.confidence,
+      isHeuristicConfidence: assessed.isHeuristic,
+      evidence: {
+        hasRouteAnnotation: evidenceInput.hasRouteAnnotation,
+        hasSymbolCall: evidenceInput.hasVerifiedSymbolCall,
+        hasRuntimeTrace: evidenceInput.hasStackTraceOrSpan,
+        hasAmbiguousOverload: evidenceInput.hasAmbiguousOverload
+      },
+      evidenceSources: assessed.evidenceSources,
+      unverifiedReasons: [
+        ...assessed.unverifiedReasons,
+        ...(extraUnverified || [])
+      ]
+    };
+  }
+
   private static buildPipelineFromDiscoveredCode(
     discovered: { file: string; line: number; className: string; methodName: string; guard?: string; injectedServices: string[] },
     endpoint: string,
@@ -257,36 +283,38 @@ export class DiResolver {
     const nodes: FlowNode[] = [];
     const edges: FlowEdge[] = [];
 
-    // 1. Entrypoint node
-    const entryNode: FlowNode = {
-      id: 'node-entrypoint',
-      type: 'entrypoint',
-      label: `${method} ${endpoint}`,
-      sublabel: `${discovered.className}.${discovered.methodName}()`,
-      file: discovered.file,
-      line: discovered.line,
-      state: 'NOT_VERIFIED',
-      certainty: 'EXPLICIT',
-      confidence: 0.9,
-      method
-    };
+    // 1. Entrypoint node (route found statically, runtime request not yet executed)
+    const entryNode = this.createStaticNode(
+      {
+        id: 'node-entrypoint',
+        type: 'entrypoint',
+        label: `${method} ${endpoint}`,
+        sublabel: `${discovered.className}.${discovered.methodName}()`,
+        file: discovered.file,
+        line: discovered.line,
+        state: 'NOT_VERIFIED',
+        method
+      },
+      { hasRouteAnnotation: true, hasVerifiedSymbolCall: true }
+    );
     nodes.push(entryNode);
 
     let prevNodeId = entryNode.id;
 
     // 2. Guard or Security Filter if detected
     if (discovered.guard) {
-      const guardNode: FlowNode = {
-        id: 'node-guard',
-        type: 'guard',
-        label: 'Security Guard Check',
-        sublabel: discovered.guard,
-        file: discovered.file,
-        line: Math.max(1, discovered.line - 1),
-        state: 'NOT_VERIFIED',
-        certainty: 'EXPLICIT',
-        confidence: 0.85
-      };
+      const guardNode = this.createStaticNode(
+        {
+          id: 'node-guard',
+          type: 'guard',
+          label: 'Security Guard Check',
+          sublabel: discovered.guard,
+          file: discovered.file,
+          line: Math.max(1, discovered.line - 1),
+          state: 'NOT_VERIFIED'
+        },
+        { hasRouteAnnotation: true, hasVerifiedSymbolCall: true }
+      );
       nodes.push(guardNode);
       edges.push({ id: `e-${prevNodeId}-${guardNode.id}`, source: prevNodeId, target: guardNode.id, label: 'Authorize' });
       prevNodeId = guardNode.id;
@@ -296,45 +324,51 @@ export class DiResolver {
     const serviceNodes: FlowNode[] = [];
     for (let i = 0; i < discovered.injectedServices.length; i++) {
       const serviceName = discovered.injectedServices[i];
-      const serviceNode: FlowNode = {
-        id: `node-service-${i + 1}`,
-        type: 'service',
-        label: serviceName,
-        sublabel: `${discovered.methodName}() logic`,
-        state: 'NOT_VERIFIED',
-        certainty: 'EXPLICIT',
-        confidence: 0.80
-      };
+      const serviceNode = this.createStaticNode(
+        {
+          id: `node-service-${i + 1}`,
+          type: 'service',
+          label: serviceName,
+          sublabel: `${discovered.methodName}() logic`,
+          state: 'NOT_VERIFIED'
+        },
+        { hasVerifiedSymbolCall: true },
+        ['Đã phát hiện tên service từ controller, nhưng chưa xác minh file/dòng cài đặt cụ thể của service.']
+      );
       nodes.push(serviceNode);
       serviceNodes.push(serviceNode);
       edges.push({ id: `e-${prevNodeId}-${serviceNode.id}`, source: prevNodeId, target: serviceNode.id, label: 'Delegate' });
       prevNodeId = serviceNode.id;
     }
 
-    // 4. Repository Node
+    // 4. Repository Node (inferred by naming convention)
     const repoName = discovered.className.replace('Controller', 'Repository');
-    const repoNode: FlowNode = {
-      id: 'node-repository',
-      type: 'repository',
-      label: repoName,
-      sublabel: 'Database Operation',
-      state: 'NOT_VERIFIED',
-      certainty: 'INFERRED',
-      confidence: 0.65
-    };
+    const repoNode = this.createStaticNode(
+      {
+        id: 'node-repository',
+        type: 'repository',
+        label: repoName,
+        sublabel: 'Database Operation',
+        state: 'NOT_VERIFIED'
+      },
+      {},
+      ['Node Repository được suy đoán theo quy ước đặt tên, chưa thấy lời gọi trực tiếp trong AST.']
+    );
     nodes.push(repoNode);
     edges.push({ id: `e-${prevNodeId}-${repoNode.id}`, source: prevNodeId, target: repoNode.id, label: 'Query / Persist' });
 
-    // 5. Database Node
-    const dbNode: FlowNode = {
-      id: 'node-database',
-      type: 'database',
-      label: 'Database Connection',
-      sublabel: 'RDBMS / NoSQL Store',
-      state: 'NOT_VERIFIED',
-      certainty: 'INFERRED',
-      confidence: 0.50
-    };
+    // 5. Database Node (inferred)
+    const dbNode = this.createStaticNode(
+      {
+        id: 'node-database',
+        type: 'database',
+        label: 'Database Connection',
+        sublabel: 'RDBMS / NoSQL Store',
+        state: 'NOT_VERIFIED'
+      },
+      {},
+      ['Node Database được suy đoán theo kiến trúc chuẩn, chưa có span/log SQL thực tế.']
+    );
     nodes.push(dbNode);
     edges.push({ id: `e-${repoNode.id}-${dbNode.id}`, source: repoNode.id, target: dbNode.id, label: 'Transaction' });
 
@@ -352,57 +386,68 @@ export class DiResolver {
     const parts = endpoint.split('/').filter(Boolean);
     const domain = parts[parts.length - 1] || 'resource';
     const capitalizedDomain = domain.charAt(0).toUpperCase() + domain.slice(1);
+    const fallbackReason = 'Không tìm thấy controller/route khớp trong workspace; node này được suy đoán theo mẫu chuẩn.';
 
-    const entryNode: FlowNode = {
-      id: 'node-entrypoint',
-      type: 'entrypoint',
-      label: `${method} ${endpoint}`,
-      sublabel: `${capitalizedDomain}Controller.handleRequest()`,
-      state: 'NOT_VERIFIED',
-      certainty: 'EXPLICIT',
-      confidence: 0.85,
-      method
-    };
+    const entryNode = this.createStaticNode(
+      {
+        id: 'node-entrypoint',
+        type: 'entrypoint',
+        label: `${method} ${endpoint}`,
+        sublabel: `${capitalizedDomain}Controller.handleRequest()`,
+        state: 'NOT_VERIFIED',
+        method
+      },
+      {},
+      [fallbackReason]
+    );
 
-    const filterNode: FlowNode = {
-      id: 'node-filter',
-      type: 'filter',
-      label: 'Auth & Validation Filter',
-      sublabel: 'Token Verification & Request DTO Validator',
-      state: 'NOT_VERIFIED',
-      certainty: 'INFERRED',
-      confidence: 0.60
-    };
+    const filterNode = this.createStaticNode(
+      {
+        id: 'node-filter',
+        type: 'filter',
+        label: 'Auth & Validation Filter',
+        sublabel: 'Token Verification & Request DTO Validator',
+        state: 'NOT_VERIFIED'
+      },
+      {},
+      [fallbackReason]
+    );
 
-    const serviceNode: FlowNode = {
-      id: 'node-service',
-      type: 'service',
-      label: `${capitalizedDomain}Service`,
-      sublabel: `execute${capitalizedDomain}Operation()`,
-      state: 'NOT_VERIFIED',
-      certainty: 'INFERRED',
-      confidence: 0.60
-    };
+    const serviceNode = this.createStaticNode(
+      {
+        id: 'node-service',
+        type: 'service',
+        label: `${capitalizedDomain}Service`,
+        sublabel: `execute${capitalizedDomain}Operation()`,
+        state: 'NOT_VERIFIED'
+      },
+      {},
+      [fallbackReason]
+    );
 
-    const repoNode: FlowNode = {
-      id: 'node-repository',
-      type: 'repository',
-      label: `${capitalizedDomain}Repository`,
-      sublabel: `findOrSave${capitalizedDomain}()`,
-      state: 'NOT_VERIFIED',
-      certainty: 'INFERRED',
-      confidence: 0.50
-    };
+    const repoNode = this.createStaticNode(
+      {
+        id: 'node-repository',
+        type: 'repository',
+        label: `${capitalizedDomain}Repository`,
+        sublabel: `findOrSave${capitalizedDomain}()`,
+        state: 'NOT_VERIFIED'
+      },
+      {},
+      [fallbackReason]
+    );
 
-    const dbNode: FlowNode = {
-      id: 'node-database',
-      type: 'database',
-      label: 'Persistent Store',
-      sublabel: 'SQL / NoSQL Engine',
-      state: 'NOT_VERIFIED',
-      certainty: 'INFERRED',
-      confidence: 0.40
-    };
+    const dbNode = this.createStaticNode(
+      {
+        id: 'node-database',
+        type: 'database',
+        label: 'Persistent Store',
+        sublabel: 'SQL / NoSQL Engine',
+        state: 'NOT_VERIFIED'
+      },
+      {},
+      [fallbackReason]
+    );
 
     const edges: FlowEdge[] = [
       { id: 'e1-2', source: entryNode.id, target: filterNode.id, label: 'HTTP Context', animated: true },

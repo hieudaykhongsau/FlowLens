@@ -58,7 +58,10 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
     causalWhy,
     codeEvidence,
     codeDiff,
-    runtimeLogs
+    runtimeLogs,
+    evidenceSources,
+    unverifiedReasons,
+    isHeuristicConfidence
   } = node;
 
   const isStopped = state === 'STOPPED_HERE';
@@ -168,8 +171,9 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
             >
               ● {state}
             </span>
-            <span className="text-slate-300">
-              Confidence: <strong className="text-sky-400">{Math.round(confidenceScore * 100)}%</strong> ({certaintyLevel})
+            <span className="text-slate-300" title="Điểm heuristic tính từ trọng số bằng chứng tĩnh/runtime, không phải xác suất tuyệt đối">
+              {isHeuristicConfidence ? 'Heuristic:' : 'Confidence:'}{' '}
+              <strong className="text-sky-400">{Math.round(confidenceScore * 100)}%</strong> ({certaintyLevel})
             </span>
           </div>
 
@@ -196,6 +200,42 @@ export const InspectorDrawer: React.FC<InspectorDrawerProps> = ({ node, onClose 
         {/* TAB 1: Root Cause / Evidence Analysis */}
         {activeTab === 'root_cause' && (
           <div className="space-y-3">
+            {/* Known vs Unverified Epistemic Summary */}
+            {(evidenceSources?.length || unverifiedReasons?.length) && (
+              <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 space-y-2">
+                {evidenceSources && evidenceSources.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-sky-400 uppercase tracking-wider block font-semibold">
+                      Nguồn bằng chứng (Đã biết):
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {evidenceSources.map((src) => (
+                        <span
+                          key={src}
+                          className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 text-[10px] font-mono"
+                        >
+                          {src}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {unverifiedReasons && unverifiedReasons.length > 0 && (
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[10px] text-amber-400 uppercase tracking-wider block font-semibold">
+                      Điều chưa xác minh (Đang suy đoán / Thiếu dữ liệu):
+                    </span>
+                    <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-200/80 font-sans">
+                      {unverifiedReasons.map((reason, idx) => (
+                        <li key={idx}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 4-part Causal Card for STOPPED_HERE nodes */}
             {causalWhy && (
               <div className="space-y-2.5">

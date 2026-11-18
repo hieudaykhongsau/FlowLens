@@ -28,35 +28,102 @@ const WHITELISTED_COMMANDS: Set<string> = new Set([
   'go'
 ]);
 
+const MAX_OUTPUT_CHARS = 16 * 1024;
+const MAX_LOG_BYTES = 2 * 1024 * 1024; // 2MB
+
 export class SandboxDispatcher {
+  /**
+   * Kiểm tra đường dẫn có nằm trong thư mục gốc cho phép hay không
+   */
+  public static isPathWithinBase(targetPath: string, baseDir: string): boolean {
+    const resolvedTarget = path.resolve(targetPath);
+    const resolvedBase = path.resolve(baseDir);
+    const rel = path.relative(resolvedBase, resolvedTarget);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  }
+
+  /**
+   * Kiểm tra lệnh có khớp chính xác whitelist hay không (không dùng startsWith)
+   */
+  public static resolveWhitelistedCommand(rawCommand: string): string {
+    const trimmed = (rawCommand || '').trim();
+    if (!trimmed || /[;&|`$><\r\n]/.test(trimmed) || trimmed.includes('..')) {
+      throw new Error(`Invalid command '${rawCommand}' in FlowLens Sandbox.`);
+    }
+
+    const hasPathSep = trimmed.includes('/') || trimmed.includes('\\');
+    const baseName = path.basename(trimmed).toLowerCase();
+
+    if (hasPathSep) {
+      const normalized = trimmed.replace(/\\/g, '/');
+      if (normalized !== './gradlew' && normalized !== './gradlew.bat') {
+        throw new Error(`Arbitrary executable path '${rawCommand}' is not allowed in FlowLens Sandbox.`);
+      }
+    }
+
+    if (!WHITELISTED_COMMANDS.has(baseName)) {
+      throw new Error(
+        `Command '${rawCommand}' is not whitelisted in FlowLens Sandbox. Allowed commands: ${Array.from(WHITELISTED_COMMANDS).join(', ')}`
+      );
+    }
+
+    return trimmed;
+  }
+
+  /**
+   * Che token, JWT và thông tin nhạy cảm trong log/output
+   */
+  public static redactSecrets(text: string): string {
+    if (!text) return text;
+    return text
+      // JWT tokens
+      .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*\b/g, '[REDACTED_JWT]')
+      // Authorization / Bearer headers
+      .replace(/(Authorization\s*:\s*(?:Bearer|Basic|Token)\s+)[^\s\r\n'"]+/gi, '$1[REDACTED]')
+      .replace(/\b(Bearer\s+)[A-Za-z0-9\-._~+/]+=*/gi, '$1[REDACTED]')
+      // Common key=value or key: value secrets
+      .replace(/((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)\s*[:=]\s*['"]?)[^\s'",;\r\n}]+(['"]?)/gi, '$1[REDACTED]$2');
+  }
+
+  /**
+   * Xác thực cwd nằm trong FLOWLENS_WORKSPACE_ROOT nếu biến môi trường được cấu hình
+   */
+  private static resolveSafeCwd(requestedCwd?: string): string {
+    const allowedRoot = process.env.FLOWLENS_WORKSPACE_ROOT
+      ? path.resolve(process.env.FLOWLENS_WORKSPACE_ROOT)
+      : undefined;
+    const cwd = requestedCwd ? path.resolve(requestedCwd) : (allowedRoot || process.cwd());
+
+    if (allowedRoot && !this.isPathWithinBase(cwd, allowedRoot)) {
+      throw new Error(`Access denied: cwd '${cwd}' is outside allowed workspace root '${allowedRoot}'.`);
+    }
+
+    return cwd;
+  }
+
   /**
    * Thực thi kiểm thử an toàn qua danh sách whitelist và execFile
    */
   public static async executeRunner(params: ExecuteRunnerParams): Promise<RunnerResult> {
     const startTime = Date.now();
-    const cmd = params.command.toLowerCase();
+    const safeCommand = this.resolveWhitelistedCommand(params.command);
+    const cwd = this.resolveSafeCwd(params.cwd);
 
-    // Check whitelist
-    const isAllowed = Array.from(WHITELISTED_COMMANDS).some(w => w === cmd || cmd.startsWith(w));
-    if (!isAllowed) {
-      throw new Error(`Command '${params.command}' is not whitelisted in FlowLens Sandbox. Allowed commands: ${Array.from(WHITELISTED_COMMANDS).join(', ')}`);
-    }
-
-    // Passive log mode: Just scan existing log files
+    // Passive log mode: Just scan existing log files within workspace
     if (params.mode === 'passive_log') {
-      return this.handlePassiveLogMode(params);
+      return this.handlePassiveLogMode(params, cwd);
     }
 
-    const cwd = params.cwd ? path.resolve(params.cwd) : process.cwd();
-    const timeoutMs = params.timeoutMs || 30000;
+    const timeoutMs = Math.min(Math.max(params.timeoutMs || 30000, 1000), 120000);
 
     return new Promise((resolve) => {
-      // In Windows, npm/mvn might need .cmd
-      let executable: string = params.command;
+      // In Windows, npm/pnpm/mvn might need .cmd
+      let executable: string = safeCommand;
       if (process.platform === 'win32') {
-        if (executable === 'npm') executable = 'npm.cmd';
-        if (executable === 'pnpm') executable = 'pnpm.cmd';
-        if (executable === 'mvn') executable = 'mvn.cmd';
+        const lower = executable.toLowerCase();
+        if (lower === 'npm') executable = 'npm.cmd';
+        if (lower === 'pnpm') executable = 'pnpm.cmd';
+        if (lower === 'mvn') executable = 'mvn.cmd';
       }
 
       execFile(
@@ -71,15 +138,15 @@ export class SandboxDispatcher {
         (error, stdout, stderr) => {
           const durationMs = Date.now() - startTime;
           const exitCode = error ? (error.code ? Number(error.code) : 1) : 0;
-          const stdoutStr = (stdout || '').toString();
-          const stderrStr = (stderr || '').toString();
+          const stdoutStr = this.redactSecrets((stdout || '').toString()).slice(-MAX_OUTPUT_CHARS);
+          const stderrStr = this.redactSecrets((stderr || '').toString()).slice(-MAX_OUTPUT_CHARS);
 
           const combined = stdoutStr + '\n' + stderrStr;
           const stackTraceFrames = SandboxDispatcher.extractStackTraceFrames(combined);
 
           resolve({
             success: exitCode === 0,
-            commandExecuted: `${params.command} ${params.args.join(' ')}`,
+            commandExecuted: `${safeCommand} ${params.args.join(' ')}`.trim(),
             exitCode,
             stdout: stdoutStr,
             stderr: stderrStr,
@@ -91,10 +158,13 @@ export class SandboxDispatcher {
     });
   }
 
-  private static handlePassiveLogMode(params: ExecuteRunnerParams): RunnerResult {
+  private static handlePassiveLogMode(params: ExecuteRunnerParams, cwd: string): RunnerResult {
     const logFilePath = params.args[0] || 'app.log';
-    const cwd = params.cwd ? path.resolve(params.cwd) : process.cwd();
-    const fullPath = path.isAbsolute(logFilePath) ? logFilePath : path.join(cwd, logFilePath);
+    const fullPath = path.resolve(cwd, logFilePath);
+
+    if (!this.isPathWithinBase(fullPath, cwd)) {
+      throw new Error(`Access denied: log file '${logFilePath}' escapes workspace '${cwd}'.`);
+    }
 
     if (!fs.existsSync(fullPath)) {
       return {
@@ -108,9 +178,34 @@ export class SandboxDispatcher {
     }
 
     try {
-      const content = fs.readFileSync(fullPath, 'utf-8');
+      const stat = fs.statSync(fullPath);
+      if (!stat.isFile()) {
+        return {
+          success: false,
+          commandExecuted: `passive_log inspect ${logFilePath}`,
+          exitCode: 1,
+          stdout: '',
+          stderr: `Path is not a file: ${fullPath}`,
+          durationMs: 0
+        };
+      }
+
+      let content: string;
+      if (stat.size > MAX_LOG_BYTES) {
+        const fd = fs.openSync(fullPath, 'r');
+        try {
+          const buffer = Buffer.alloc(MAX_LOG_BYTES);
+          fs.readSync(fd, buffer, 0, MAX_LOG_BYTES, stat.size - MAX_LOG_BYTES);
+          content = buffer.toString('utf-8');
+        } finally {
+          fs.closeSync(fd);
+        }
+      } else {
+        content = fs.readFileSync(fullPath, 'utf-8');
+      }
+
       const lines = content.split('\n');
-      const tailLines = lines.slice(-200).join('\n');
+      const tailLines = this.redactSecrets(lines.slice(-200).join('\n'));
       const stackTraceFrames = this.extractStackTraceFrames(tailLines);
 
       return {
@@ -128,7 +223,7 @@ export class SandboxDispatcher {
         commandExecuted: `passive_log inspect ${logFilePath}`,
         exitCode: 1,
         stdout: '',
-        stderr: err.message,
+        stderr: this.redactSecrets(err.message),
         durationMs: 0
       };
     }

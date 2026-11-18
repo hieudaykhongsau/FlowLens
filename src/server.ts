@@ -15,6 +15,7 @@ import {
 import { z } from 'zod';
 
 import { WebSocketHub } from './websocket/wsHub.js';
+import { isLocalOrigin, resolveBindHost } from './security/localOrigin.js';
 import { handleTraceEndpointPipeline } from './mcp/tools/tracePipeline.js';
 import { handleUpdateInvestigationSession } from './mcp/tools/updateSession.js';
 import { handleExecuteSandboxedRunner } from './mcp/tools/executeRunner.js';
@@ -28,6 +29,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = parseInt(process.env.FLOWLENS_PORT || '9876', 10);
+const HOST = resolveBindHost(process.env.FLOWLENS_HOST);
 
 // ==========================================
 // 1. HTTP Server & Canvas Static File Server
@@ -46,8 +48,12 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse) {
   if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
 
   if (canvasDir) {
-    const filePath = path.join(canvasDir, reqPath);
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const resolvedCanvasDir = path.resolve(canvasDir);
+    const relativeReqPath = reqPath.replace(/^\/+/, '');
+    const filePath = path.resolve(resolvedCanvasDir, relativeReqPath);
+    const isInsideCanvas = filePath === resolvedCanvasDir || filePath.startsWith(resolvedCanvasDir + path.sep);
+
+    if (isInsideCanvas && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
       const ext = path.extname(filePath);
       const mimeTypes: Record<string, string> = {
         '.html': 'text/html',
@@ -98,8 +104,16 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse) {
 }
 
 const httpServer = http.createServer((req, res) => {
-  // Allow CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (origin) {
+    if (!isLocalOrigin(origin)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden: non-local origin');
+      return;
+    }
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -116,9 +130,9 @@ const httpServer = http.createServer((req, res) => {
 const wsHub = WebSocketHub.getInstance();
 wsHub.attachToServer(httpServer);
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, HOST, () => {
   // MCP protocol uses stdio, so write diagnostics to stderr, NOT stdout!
-  console.error(`[FlowLens] HTTP Server & WebSocket Hub running on http://localhost:${PORT}`);
+  console.error(`[FlowLens] HTTP Server & WebSocket Hub running on http://${HOST}:${PORT}`);
 });
 
 // ==========================================

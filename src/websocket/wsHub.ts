@@ -1,6 +1,7 @@
 import { Server as HttpServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { SessionStore } from '../engine/sessionStore.js';
+import { isLocalOrigin } from '../security/localOrigin.js';
 import { InvestigationSession } from '../types.js';
 
 export interface WebSocketMessage {
@@ -36,7 +37,18 @@ export class WebSocketHub {
   }
 
   public attachToServer(server: HttpServer): void {
-    this.wss = new WebSocketServer({ server });
+    this.wss = new WebSocketServer({
+      server,
+      verifyClient: (info, callback) => {
+        const origin = info.origin || info.req.headers.origin;
+        // Cho phép client local không gửi Origin (CLI/Node) hoặc Origin localhost/127.0.0.1
+        if (!origin || isLocalOrigin(origin)) {
+          callback(true);
+          return;
+        }
+        callback(false, 403, 'Forbidden: non-local WebSocket origin');
+      }
+    });
 
     this.wss.on('connection', (ws: WebSocket) => {
       this.clients.add(ws);
